@@ -52,6 +52,7 @@ ai-toolbox/
     init/                # scaffold a project's AGENTS.md (stack-aware, incl. game engines)
     capture/             # turn a correction into a permanent AGENTS.md rule
     lint/                # health-check knowledge files for drift/bloat
+    pre-pr/              # run this project's real checks + native review before you push
   examples/
     relik-AGENTS.md      # a real SaaS pack — proof the format works
     keepy-uppy-AGENTS.md # a real Unity/game pack (game dev is first-class)
@@ -81,4 +82,5 @@ It goes in each harness's *global* config (`~/.claude/CLAUDE.md` import,
 - [~] Starter library — `base-charter` + `unity` seeded; more stack snippets to come
 - [x] Examples — `relik` (SaaS) + `keepy-uppy` (Unity) — format proven on a SaaS *and* a game
 - [x] Design layer — 4 greenfield templates (concept · design-system · system-GDD · product-brief) + mode-aware generator
-- [ ] Greenfield example (chief-of-geese); pre-PR gate skill; portable MCP config; toolbox self-audit
+- [x] Group 2 — `pre-pr` gate + reproduce-before-you-fix norm (in base charter)
+- [ ] Greenfield example (chief-of-geese); portable MCP config; toolbox self-audit

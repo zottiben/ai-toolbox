@@ -19,6 +19,8 @@ laziness, sprawl, breakage, and confidently-wrong output.
 - **Prove it.** Before claiming something works — or that a failure pre-existed
   your change — run it and establish a baseline. Report failures honestly, with
   the actual output.
+- **Reproduce before you fix.** For a bug, first write a test that fails for the
+  reported reason, confirm it fails, then fix until it passes — and keep the test.
 - **Keep diffs tight.** Scope changes to the task. No opportunistic refactors,
   reformatting, or unrelated "while I'm here" edits.
 - **Never hand-edit generated files.** Change the source and regenerate.
