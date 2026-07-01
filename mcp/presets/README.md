@@ -16,19 +16,24 @@ preset in and go. Each `.json` is a mergeable `mcpServers` block.
 
 ## How to use a preset in a repo
 
-Say you want Supabase in a repo:
+MCP config for a project lives in **`.mcp.json` at the repo root** (not in
+`.claude/`). Each preset file is a complete, valid `.mcp.json` on its own. Say you
+want Supabase:
 
-1. Open (or create) the repo's `.mcp.json` at its root.
-2. Copy the `mcpServers` block from `supabase.json` into it — merge under
-   `mcpServers` if the file already has other servers.
-3. Export the secrets it needs in your shell (`SUPABASE_ACCESS_TOKEN`,
+1. **No `.mcp.json` yet?** Just copy the preset: `cp mcp/presets/supabase.json <repo>/.mcp.json`.
+   **Already have one?** Copy the inner server entry into your existing
+   `mcpServers` object (merge — see the two-server example below).
+2. Export the secrets it needs in your shell (`SUPABASE_ACCESS_TOKEN`,
    `SUPABASE_PROJECT_REF`); the `${VARS}` resolve from your environment — never
    paste real tokens into the file.
-4. Restart Claude Code in that repo and run `/mcp` to confirm it connected (and to
+3. Restart Claude Code in that repo and run `/mcp` to confirm it connected (and to
    complete any OAuth step, e.g. Expo/Sentry).
 
-The server's tools are now available in that repo only; delete the block to
-uninstall. Want it everywhere instead? Put the block in `~/.claude.json`.
+Prefer not to hand-edit JSON? The CLI does it for you:
+`claude mcp add-json supabase '<the server object>'` (`claude mcp --help` for the
+`--scope project|user|local` flag). The server's tools are then available in that
+repo only; delete the block (or `claude mcp remove`) to uninstall. Want it
+everywhere? Use `--scope user` (writes to `~/.claude.json`).
 
 A `.mcp.json` with two presets merged in:
 

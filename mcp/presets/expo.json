@@ -1,5 +1,4 @@
 {
-  "_note": "Official Expo MCP (remote). Run /mcp in Claude Code to authenticate (OAuth, or an Expo personal access token from the EAS dashboard). Also shipped as the official plugin 'expo@claude-plugins-official'. Expo also publishes agent Skills at github.com/expo/skills. Covers EAS build triage + TestFlight crash/review data + RN DevTools.",
   "mcpServers": {
     "expo": {
       "type": "http",

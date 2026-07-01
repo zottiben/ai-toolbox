@@ -1,5 +1,4 @@
 {
-  "_note": "Merge this block into .claude/settings.json (project) or ~/.claude/settings.json (all projects). Assumes the scripts live in <project>/.claude/hooks/. Requires jq.",
   "hooks": {
     "PreToolUse": [
       {

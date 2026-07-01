@@ -1,5 +1,4 @@
 {
-  "_note": "Official Sentry MCP (remote, streamable HTTP + OAuth — run /mcp to authenticate). Self-hosted/stdio alternative: `npx @sentry/mcp-server@latest` with SENTRY_ACCESS_TOKEN (+ --host for self-hosted). Use for crash RCA (Seer) in-editor.",
   "mcpServers": {
     "sentry": {
       "type": "http",

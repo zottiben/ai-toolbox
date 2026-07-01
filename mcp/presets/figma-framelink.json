@@ -1,5 +1,4 @@
 {
-  "_note": "Framelink Figma MCP — works on any Figma plan via a personal access token. Set FIGMA_API_KEY in your env.",
   "mcpServers": {
     "figma": {
       "command": "npx",
