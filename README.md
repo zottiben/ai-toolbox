@@ -46,7 +46,7 @@ ai-toolbox/
     design/              # greenfield design-guide skeletons (concept, design-system, GDD, product-brief)
   starters/            # reusable, opt-in best-practice content (a library)
     base-charter.md      # universal norms — the one always-on artifact
-    rules/               # rule snippets by stack (go, react, sql, aws, unity, …)
+    rules/               # rule snippets by stack (unity, go, react, expo, supabase, bun, …)
     agents/              # generic agent starters + an authoring template
   skills/              # the tooling (portable playbooks + thin harness adapters)
     init/                # scaffold a project's AGENTS.md (stack-aware, incl. game engines)
@@ -79,7 +79,7 @@ It goes in each harness's *global* config (`~/.claude/CLAUDE.md` import,
 - [x] Agnostic structure: templates + starters + skills + examples
 - [x] The three templates (`AGENTS` / `CLAUDE` / `RULES`)
 - [x] Group 1 skills: `init` (generator), `capture` (gotcha flywheel), `lint` (health-check)
-- [~] Starter library — `base-charter` + `unity` seeded; more stack snippets to come
+- [x] Group 3 (starter library) — stack snippets (unity/go/react/expo/supabase/bun/vue/laravel/aws) + agent starters (template + convention-reviewer example)
 - [x] Examples — `relik` (SaaS) + `keepy-uppy` (Unity) — format proven on a SaaS *and* a game
 - [x] Design layer — 4 greenfield templates (concept · design-system · system-GDD · product-brief) + mode-aware generator
 - [x] Group 2 — `pre-pr` gate + reproduce-before-you-fix norm (in base charter)
