@@ -44,6 +44,7 @@ ai-toolbox/
     CLAUDE.template.md   # thin Claude Code adapter (@AGENTS.md)
     RULES.template.md    # OPTIONAL shared hard-constraints doc
     design/              # greenfield design-guide skeletons (concept, design-system, GDD, product-brief)
+    feature-brief.md     # OPTIONAL crisp target for a feature/task
   starters/            # reusable, opt-in best-practice content (a library)
     base-charter.md      # universal norms — the one always-on artifact
     rules/               # rule snippets by stack (unity, go, react, expo, supabase, bun, …)
@@ -53,6 +54,8 @@ ai-toolbox/
     capture/             # turn a correction into a permanent AGENTS.md rule
     lint/                # health-check knowledge files for drift/bloat
     pre-pr/              # run this project's real checks + native review before you push
+    audit/               # self-audit the toolbox for drift (keeps it lean)
+  mcp/                 # portable capability layer — MCP registry + when-to-use + config template
   examples/
     relik-AGENTS.md      # a real SaaS pack — proof the format works
     keepy-uppy-AGENTS.md # a real Unity/game pack (game dev is first-class)
@@ -83,4 +86,5 @@ It goes in each harness's *global* config (`~/.claude/CLAUDE.md` import,
 - [x] Examples — `relik` (SaaS) + `keepy-uppy` (Unity) — format proven on a SaaS *and* a game
 - [x] Design layer — 4 greenfield templates (concept · design-system · system-GDD · product-brief) + mode-aware generator
 - [x] Group 2 — `pre-pr` gate + reproduce-before-you-fix norm (in base charter)
-- [ ] Greenfield example (chief-of-geese); portable MCP config; toolbox self-audit
+- [x] Group 4 (ergonomics & governance) — portable MCP config + self-audit skill + feature-brief template
+- [ ] Greenfield example (chief-of-geese); validate skills live; retire Software Teams / JDI from repos
