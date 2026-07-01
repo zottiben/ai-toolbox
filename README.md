@@ -56,6 +56,7 @@ ai-toolbox/
     pre-pr/              # run this project's real checks + native review before you push
     audit/               # self-audit the toolbox for drift (keeps it lean)
   mcp/                 # portable capability layer — MCP registry + when-to-use + config template
+  hooks/               # functional guardrails — shell hooks that ENFORCE the AGENTS.md rules
   examples/
     relik-AGENTS.md      # a real SaaS pack — proof the format works
     keepy-uppy-AGENTS.md # a real Unity/game pack (game dev is first-class)
@@ -87,4 +88,5 @@ It goes in each harness's *global* config (`~/.claude/CLAUDE.md` import,
 - [x] Design layer — 4 greenfield templates (concept · design-system · system-GDD · product-brief) + mode-aware generator
 - [x] Group 2 — `pre-pr` gate + reproduce-before-you-fix norm (in base charter)
 - [x] Group 4 (ergonomics & governance) — portable MCP config + self-audit skill + feature-brief template
+- [~] Functional layer — hooks that ENFORCE rules (format-on-edit, guard-irreversible, protect-generated, conventional-commit, session-context); custom MCPs next
 - [ ] Greenfield example (chief-of-geese); validate skills live; retire Software Teams / JDI from repos
