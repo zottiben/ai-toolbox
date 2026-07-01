@@ -60,6 +60,9 @@ Pull the relevant files from `starters/rules/` for each detected stack (e.g.
 Ask a SHORT, stack-tuned set — a few at a time — and fold answers into "Hard
 rules" as *rule / why / how it's enforced*:
 
+- **Operational commands (ask first — the most-forgotten facts):** how do you run
+  the dev server? how and where do you build for release? any seed / reset / env
+  setup steps? These go in the **Commands** section.
 - **Any project:** safety-critical constraints? cost or irreversible actions
   (paid builds, prod deploys, destructive migrations)? authz/multi-tenant rules?
   files never to hand-edit? release/versioning gotchas?

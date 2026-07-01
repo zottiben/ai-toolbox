@@ -16,8 +16,10 @@ a task, persist it.
    anything obvious from the source, and skip one-off task detail.
 3. **Dedup.** If `AGENTS.md` already covers it, sharpen that line — don't add a
    near-duplicate.
-4. **Place it** under the right section (Hard rules / Commands / Layout), matching
-   the file's existing format and terseness.
+4. **Place it** under the right section — operational "how to run" facts (dev
+   server, build, release, seed/reset) go in **Commands**; constraints and gotchas
+   go in **Hard rules**; structural notes in **Layout**. Match the file's existing
+   format and terseness.
 5. **Keep it lean.** One or two sentences plus a snippet only if needed. If
    `AGENTS.md` is growing long, that's a signal to tighten it, not to append
    forever — offer to run `toolbox-lint`.

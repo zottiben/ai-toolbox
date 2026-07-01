@@ -1,0 +1,10 @@
+{
+  "_caveat": "READ-ONLY, dev/staging project only — never point this at prod (documented RLS-bypass exfiltration risk). Set SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF in your env; do not commit them.",
+  "mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": ["-y", "@supabase/mcp-server-supabase@latest", "--read-only", "--project-ref=${SUPABASE_PROJECT_REF}"],
+      "env": { "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}" }
+    }
+  }
+}
