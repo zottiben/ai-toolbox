@@ -86,7 +86,7 @@ It goes in each harness's *global* config (`~/.claude/CLAUDE.md` import,
 - [x] Agnostic structure: templates + starters + skills + examples
 - [x] The three templates (`AGENTS` / `CLAUDE` / `RULES`)
 - [x] Group 1 skills: `init` (generator), `capture` (gotcha flywheel), `lint` (health-check)
-- [x] Group 3 (starter library) — stack snippets (unity/go/react/expo/supabase/bun/vue/laravel/aws) + agent starters (template + convention-reviewer example)
+- [x] Group 3 (starter library) — stack snippets (typescript/unity/go/react/expo/supabase/bun/vue/laravel/aws) + agent starters (template + convention-reviewer example)
 - [x] Examples — `relik` (SaaS) + `keepy-uppy` (Unity) — format proven on a SaaS *and* a game
 - [x] Design layer — 4 greenfield templates (concept · design-system · system-GDD · product-brief) + mode-aware generator
 - [x] Group 2 — `pre-pr` gate + reproduce-before-you-fix norm (in base charter)
