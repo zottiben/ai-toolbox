@@ -10,6 +10,15 @@ edit to taste. You stay the author.
 | `rules/` | Rule snippets by stack (`go.md`, `react.md`, `sql.md`, `aws.md`, …) | composed into a project's `AGENTS.md` at scaffold time |
 | `agents/` | A few high-quality, generic agent definitions + an authoring template | dropped into a project's agent dir and customized |
 
+## How to use
+
+- **`base-charter.md`** → append into your global config once per machine
+  (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`). It's the only always-on file.
+- **`rules/*.md`** → **inline** the relevant snippets into a project's `AGENTS.md`
+  (the `init` skill does this for detected stacks). They aren't installed as files.
+- **`agents/*`** → copy a starter into `<repo>/.claude/agents/<name>/AGENT.md` (or
+  `~/.claude/agents/`) and customize. See `agents/README.md`.
+
 ## Rules of the road for this folder
 
 - **Snippets are seeds, not gospel.** They capture common footguns for a stack;

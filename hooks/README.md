@@ -26,7 +26,8 @@ reason). Context hooks emit `hookSpecificOutput.additionalContext` on stdout.
 1. Copy the scripts in: `cp hooks/*.sh <project>/.claude/hooks/ && chmod +x <project>/.claude/hooks/*.sh`
 2. Merge `settings.hooks.json` into `<project>/.claude/settings.json` (commit it to
    share with the team) — or `~/.claude/settings.json` for all projects.
-3. Requires `jq` on `PATH`. Run `/hooks` in Claude Code to see them registered.
+3. Requires `jq` **or** `python3` on `PATH` (the scripts fall back automatically).
+   Run `/hooks` in Claude Code to see them registered.
 
 ## Tune them
 

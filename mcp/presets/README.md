@@ -14,10 +14,30 @@ preset in and go. Each `.json` is a mergeable `mcpServers` block.
    that repo needs, and prefer a **CLI + skill** (`skills/cli/`) when a CLI already
    exists (`flyctl`, `gh`, `aws`, `supabase` writes).
 
-## Install (per repo)
+## How to use a preset in a repo
 
-Merge a preset's `mcpServers` block into the repo's `.mcp.json` (or global
-`~/.claude.json`). Fill `${ENV_VARS}` from your environment — never commit tokens.
+Say you want Supabase in a repo:
+
+1. Open (or create) the repo's `.mcp.json` at its root.
+2. Copy the `mcpServers` block from `supabase.json` into it — merge under
+   `mcpServers` if the file already has other servers.
+3. Export the secrets it needs in your shell (`SUPABASE_ACCESS_TOKEN`,
+   `SUPABASE_PROJECT_REF`); the `${VARS}` resolve from your environment — never
+   paste real tokens into the file.
+4. Restart Claude Code in that repo and run `/mcp` to confirm it connected (and to
+   complete any OAuth step, e.g. Expo/Sentry).
+
+The server's tools are now available in that repo only; delete the block to
+uninstall. Want it everywhere instead? Put the block in `~/.claude.json`.
+
+A `.mcp.json` with two presets merged in:
+
+```json
+{ "mcpServers": {
+    "supabase": { "command": "npx", "args": ["-y", "@supabase/mcp-server-supabase@latest", "--read-only", "--project-ref=${SUPABASE_PROJECT_REF}"], "env": { "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}" } },
+    "context7": { "command": "npx", "args": ["-y", "@upstash/context7-mcp@latest"] }
+} }
+```
 
 ## Catalog
 

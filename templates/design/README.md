@@ -24,5 +24,15 @@ Two life-stages, one body of knowledge:
   and `design-system.md` tokens graduate into a code conformance gate (as in the
   `relik` example).
 
+## How to use
+
+1. `cp -r templates/design <repo>/design/`.
+2. Keep `concept.md` + `design-system.md`; add `system-gdd.md` (games) or
+   `product-brief.md` (sites/SaaS); delete the rest.
+3. Fill them (yourself or with Claude Design), then add a **Design** section to
+   the repo's `AGENTS.md` pointing at `design/` so every session builds against it.
+
+The `init` skill's greenfield mode does steps 1–3 for you.
+
 Harvested from the CCGS / chief-of-geese pattern — **the artifact shapes, not the
 49-agent machinery.** No approval gates, no review swarms; just good skeletons.

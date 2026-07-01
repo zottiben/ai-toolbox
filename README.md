@@ -79,6 +79,29 @@ The **base charter** (`starters/base-charter.md`) is the one always-on artifact.
 It goes in each harness's *global* config (`~/.claude/CLAUDE.md` import,
 `~/.codex/AGENTS.md`, OpenCode global), on every machine you clone this onto.
 
+## Using it in a project
+
+`ai-toolbox` is a library you pull *from*, not a dependency you install. Clone it
+once, then copy the pieces a repo needs — nothing here is all-or-nothing.
+
+**Once per machine**
+- Clone this repo (e.g. `~/Developer/ai-toolbox`).
+- Append `starters/base-charter.md` into your global config so it's always on —
+  Claude Code `~/.claude/CLAUDE.md`, Codex `~/.codex/AGENTS.md`.
+
+**Per repo — take only what you want:**
+
+| Want… | Do this | Details in |
+|---|---|---|
+| Project knowledge | run the `init` skill, or `cp templates/AGENTS.template.md <repo>/AGENTS.md` and fill it; add a `CLAUDE.md` of just `@AGENTS.md` | `templates/`, `starters/rules/` |
+| Enforced guardrails | `cp hooks/*.sh <repo>/.claude/hooks/ && chmod +x …` + merge `hooks/settings.hooks.json` into `.claude/settings.json` | `hooks/` |
+| An MCP (Supabase, Chrome…) | merge `mcp/presets/<name>.json` into `<repo>/.mcp.json`, fill env vars, `/mcp` to auth | `mcp/presets/` |
+| Helper skills | `cp -r skills/cli/* <repo>/.claude/skills/` (or `skills/<name>` into `~/.claude/skills/` for everywhere) | `skills/` |
+| A greenfield design guide | `cp -r templates/design <repo>/design/` and fill the skeletons | `templates/design/` |
+
+Each directory's README has the step-by-step. Start small: an `AGENTS.md` + one
+hook already puts you ahead.
+
 ## Status
 
 - [x] Format + convention proven (a ~90-line `AGENTS.md` reliably steers a fresh

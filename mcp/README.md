@@ -7,6 +7,14 @@ them** — so any machine you clone onto gets the same capability layer.
 It does *not* store secrets. Server definitions go in `mcp.json.template` with
 env-var placeholders; real tokens stay in your environment, never in git.
 
+## How to use
+
+- **Want a ready config?** Grab it from **`presets/`** — mergeable `.json` files
+  for the common servers, with step-by-step install (see `presets/README.md`).
+- **A server not in presets?** Use `mcp.json.template` as the skeleton and fill it.
+- **When to reach for which** is the registry below. Name the right MCP in a
+  project's `AGENTS.md` so the model knows to use it.
+
 ## The registry — your MCPs and when to reach for each
 
 | MCP | Reach for it when… |

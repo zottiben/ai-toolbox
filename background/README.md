@@ -26,3 +26,13 @@ unbounded auto-fix loop.
 - `loop.md.template` — customize what bare `/loop` does per repo.
 - The **`babysit-pr`** skill (`skills/babysit-pr/`) — a *triaging* PR watcher (the
   research's key lesson: assess each item as fix/dismiss/escalate, don't blindly auto-apply).
+
+## How to use
+
+- **`/loop` and `/goal`** are built into Claude Code — just type them; nothing to
+  install. E.g. `/loop 10m /babysit-pr 1234`, or `/goal all tests pass, stop after 8 turns`.
+- **GitHub Action:** `cp background/claude-github-action.yml <repo>/.github/workflows/claude.yml`,
+  add an `ANTHROPIC_API_KEY` repo secret, and verify the action's inputs against its README.
+- **`.claude/loop.md`:** `cp background/loop.md.template <repo>/.claude/loop.md` to
+  customize what a bare `/loop` does in that repo.
+- **`babysit-pr`:** install it like any skill — see `skills/README.md`.

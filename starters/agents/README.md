@@ -25,4 +25,11 @@ tool does the job, use the native tool.
 - `convention-reviewer.md` — one worked example: reviews a diff against the
   project's own `AGENTS.md` hard rules (distinct from native bug-focused review).
 
+## How to use
+
+Copy a starter into `<repo>/.claude/agents/<name>/AGENT.md` (per-repo) or
+`~/.claude/agents/` (everywhere), then customize its prompt/tools. Claude Code
+auto-selects an agent by its `description`, or you can target it explicitly via
+the Task tool. `AGENT.template.md` is the skeleton for writing your own.
+
 Keep this folder small. A roster of agents is how frameworks rot.
