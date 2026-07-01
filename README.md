@@ -56,8 +56,10 @@ ai-toolbox/
     pre-pr/              # run this project's real checks + native review before you push
     audit/               # self-audit the toolbox for drift (keeps it lean)
     cli/                 # CLI-wrapper skills (fly, gh, supabase, eas, aws) — CLI+skill instead of heavy MCPs
+    babysit-pr/          # shepherd a PR to green with triage (bounded)
   mcp/                 # capability layer — registry, when-to-use, template + presets/ (ready configs to drop into a repo)
   hooks/               # functional guardrails — shell hooks that ENFORCE the AGENTS.md rules
+  background/          # recurring/unattended automation — /loop & /goal guide, PR-babysitter, GitHub Action template
   examples/
     relik-AGENTS.md      # a real SaaS pack — proof the format works
     keepy-uppy-AGENTS.md # a real Unity/game pack (game dev is first-class)
@@ -89,5 +91,5 @@ It goes in each harness's *global* config (`~/.claude/CLAUDE.md` import,
 - [x] Design layer — 4 greenfield templates (concept · design-system · system-GDD · product-brief) + mode-aware generator
 - [x] Group 2 — `pre-pr` gate + reproduce-before-you-fix norm (in base charter)
 - [x] Group 4 (ergonomics & governance) — portable MCP config + self-audit skill + feature-brief template
-- [~] Functional layer — hooks (tested green) · MCP presets library (`mcp/presets`) · CLI-wrapper skills (fly/gh/supabase/eas/aws) · capture+init upgrades
+- [~] Functional layer — hooks (tested) · MCP presets (supabase/context7/chrome/playwright/figma/expo/sentry) · CLI skills (fly/gh/supabase/eas/aws) · background layer (`/loop`+`/goal` guide, babysit-pr, GH Action) · capture+init upgrades
 - [ ] Greenfield example (chief-of-geese); validate skills live; retire Software Teams / JDI from repos

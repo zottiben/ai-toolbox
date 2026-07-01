@@ -28,12 +28,12 @@ Merge a preset's `mcpServers` block into the repo's `.mcp.json` (or global
 | `chrome-devtools.json` | official Google | none | CWV / Lighthouse / network / perf the agent can't otherwise see | profiling, not e2e |
 | `playwright.json` | official Microsoft | none | a11y-tree e2e automation ("does it work") | pairs with chrome-devtools |
 | `figma-framelink.json` | `GLips/Figma-Context-MCP` | `FIGMA_API_KEY` | pull design context on any Figma plan | the official Dev-Mode MCP is better *with* a paid seat |
+| `expo.json` | official Expo (remote) | OAuth via `/mcp` (or Expo PAT) | EAS build triage, TestFlight crash/review, RN DevTools | covers much of an "App Store Connect" need |
+| `sentry.json` | official Sentry (remote) | OAuth via `/mcp` | crash RCA (Seer) in-editor | stdio alt: `npx @sentry/mcp-server` |
 
-### Adopt these too (no preset file yet — confirm the exact endpoint/command from the source, then add one)
+### Adopt these too
 
-- **Expo** (official, free, remote `mcp.expo.dev`) — EAS build triage + TestFlight crash/review data. Covers much of an "App Store Connect" need.
-- **Sentry** (official, remote `mcp.sentry.dev`, OAuth) — crash RCA in-editor.
-- **Unity** (`CoplayDev/unity-mcp`) — scene / GameObject / play-mode control for game dev.
+- **Unity** (`CoplayDev/unity-mcp`) — scene / GameObject / play-mode control for game dev. **Auto-configures:** add the Unity package (Package Manager → git URL `https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity#main`), then *Window → MCP for Unity → Configure All Detected Clients* writes the client config (a `uv` Python server) for you — no hand-written preset.
 - **Postgres MCP Pro** (`crystaldba/postgres-mcp`, needs `DATABASE_URI`) — index tuning + health. Avoid the archived `@modelcontextprotocol/server-postgres` (unpatched SQLi).
 - **GitHub** (official) — but scope its toolsets, or just use `gh` + `skills/cli/gh`.
 - **ClickUp** (official `mcp.clickup.com`, OAuth) · **Resend** (official `resend/resend-mcp`) — worth it only for real task/broadcast management; a plain API call beats them for one-offs.
