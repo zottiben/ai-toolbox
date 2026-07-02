@@ -35,6 +35,11 @@ Prefer not to hand-edit JSON? The CLI does it for you:
 repo only; delete the block (or `claude mcp remove`) to uninstall. Want it
 everywhere? Use `--scope user` (writes to `~/.claude.json`).
 
+> **Secrets in a root `.env`, or multiple environments (staging/prod)?** See
+> `../README.md` → *"Reading secrets from a root .env"* and *"Multiple
+> environments"*, and the ready-made `supabase-multi-env.json` (uses
+> `mcp/with-dotenv.sh` to load `.env` without sourcing, one entry per env).
+
 A `.mcp.json` with two presets merged in:
 
 ```json

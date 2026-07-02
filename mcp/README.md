@@ -45,3 +45,43 @@ should name which to use — e.g. "verify mobile changes in the ios-simulator MC
 2. Fill each server's real `command`/`args`/`url` (from a working machine).
 3. Provide secrets via environment variables (`${FIGMA_TOKEN}` etc.) — never inline.
 4. Never commit a config that contains a real token.
+
+## Reading secrets from a root `.env` (no sourcing)
+
+`${VARS}` in a config resolve from the *process* environment — so a token that
+lives only in a `.env` won't be found unless you `source` it first. To avoid that,
+run the server through **`with-dotenv.sh`** (in this folder): it loads the `.env`
+at launch, then execs the server. Copy it into the repo once:
+
+```bash
+mkdir -p .claude/mcp && cp <ai-toolbox>/mcp/with-dotenv.sh .claude/mcp/ && chmod +x .claude/mcp/with-dotenv.sh
+```
+
+Then set the server's `command` to it and put the real command after a `--`:
+
+```json
+"command": ".claude/mcp/with-dotenv.sh",
+"args": ["--", "npx", "-y", "<server>", "..."]
+```
+
+The server now reads its env vars (e.g. `SUPABASE_ACCESS_TOKEN`) straight from your
+root `.env` — no sourcing. Works for any MCP or CLI. Point at another file with
+`--env-file .env.staging`.
+
+## Multiple environments (e.g. staging + prod)
+
+Add one server entry per environment — they're just separate names under
+`mcpServers`. Project refs aren't secret, so hard-code them; keep the tokens in
+your `.env` under distinct names and remap each onto the name the server expects
+with `--set TARGET=SOURCE`:
+
+```json
+"supabase-staging": { "command": ".claude/mcp/with-dotenv.sh",
+  "args": ["--set","SUPABASE_ACCESS_TOKEN=SUPABASE_STAGING_TOKEN","--","npx","-y","@supabase/mcp-server-supabase@latest","--read-only","--project-ref=STAGING_REF"] },
+"supabase-prod":    { "command": ".claude/mcp/with-dotenv.sh",
+  "args": ["--set","SUPABASE_ACCESS_TOKEN=SUPABASE_PROD_TOKEN","--","npx","-y","@supabase/mcp-server-supabase@latest","--read-only","--project-ref=PROD_REF"] }
+```
+
+Ready-made: `presets/supabase-multi-env.json`. **Keep prod `--read-only`** — a
+read-write MCP against production is the documented exfiltration risk.
+
