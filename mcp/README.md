@@ -71,17 +71,22 @@ root `.env` — no sourcing. Works for any MCP or CLI. Point at another file wit
 ## Multiple environments (e.g. staging + prod)
 
 Add one server entry per environment — they're just separate names under
-`mcpServers`. Project refs aren't secret, so hard-code them; keep the tokens in
-your `.env` under distinct names and remap each onto the name the server expects
-with `--set TARGET=SOURCE`:
+`mcpServers`, differing only by `--project-ref` (refs aren't secret; hard-code
+them). A Supabase personal access token is account-level, so **the same token
+usually works for every project** — keep one `SUPABASE_ACCESS_TOKEN` in your
+`.env` and both entries pick it up:
 
 ```json
 "supabase-staging": { "command": ".claude/mcp/with-dotenv.sh",
-  "args": ["--set","SUPABASE_ACCESS_TOKEN=SUPABASE_STAGING_TOKEN","--","npx","-y","@supabase/mcp-server-supabase@latest","--read-only","--project-ref=STAGING_REF"] },
+  "args": ["--","npx","-y","@supabase/mcp-server-supabase@latest","--read-only","--project-ref=STAGING_REF"] },
 "supabase-prod":    { "command": ".claude/mcp/with-dotenv.sh",
-  "args": ["--set","SUPABASE_ACCESS_TOKEN=SUPABASE_PROD_TOKEN","--","npx","-y","@supabase/mcp-server-supabase@latest","--read-only","--project-ref=PROD_REF"] }
+  "args": ["--","npx","-y","@supabase/mcp-server-supabase@latest","--read-only","--project-ref=PROD_REF"] }
 ```
 
 Ready-made: `presets/supabase-multi-env.json`. **Keep prod `--read-only`** — a
 read-write MCP against production is the documented exfiltration risk.
+
+> Different token per env? Add `--set SUPABASE_ACCESS_TOKEN=SUPABASE_STAGING_TOKEN`
+> (and the prod equivalent) before the `--` to map each env's token from `.env`
+> onto the name the server reads.
 
