@@ -2,11 +2,11 @@
   "mcpServers": {
     "supabase-staging": {
       "command": ".claude/mcp/with-dotenv.sh",
-      "args": ["--", "npx", "-y", "@supabase/mcp-server-supabase@latest", "--read-only", "--project-ref=YOUR_STAGING_REF"]
+      "args": ["--need", "SUPABASE_ACCESS_TOKEN", "--", "npx", "-y", "@supabase/mcp-server-supabase@latest", "--read-only", "--project-ref=YOUR_STAGING_REF"]
     },
     "supabase-prod": {
       "command": ".claude/mcp/with-dotenv.sh",
-      "args": ["--", "npx", "-y", "@supabase/mcp-server-supabase@latest", "--read-only", "--project-ref=YOUR_PROD_REF"]
+      "args": ["--need", "SUPABASE_ACCESS_TOKEN", "--", "npx", "-y", "@supabase/mcp-server-supabase@latest", "--read-only", "--project-ref=YOUR_PROD_REF"]
     }
   }
 }

@@ -66,7 +66,9 @@ Then set the server's `command` to it and put the real command after a `--`:
 
 The server now reads its env vars (e.g. `SUPABASE_ACCESS_TOKEN`) straight from your
 root `.env` — no sourcing. Works for any MCP or CLI. Point at another file with
-`--env-file .env.staging`.
+`--env-file .env.staging`. Add `--need SUPABASE_ACCESS_TOKEN` to document the
+required var in the args and fail with a clear message if it's missing — instead
+of the server starting and erroring later.
 
 ## Multiple environments (e.g. staging + prod)
 
@@ -78,9 +80,9 @@ usually works for every project** — keep one `SUPABASE_ACCESS_TOKEN` in your
 
 ```json
 "supabase-staging": { "command": ".claude/mcp/with-dotenv.sh",
-  "args": ["--","npx","-y","@supabase/mcp-server-supabase@latest","--read-only","--project-ref=STAGING_REF"] },
+  "args": ["--need","SUPABASE_ACCESS_TOKEN","--","npx","-y","@supabase/mcp-server-supabase@latest","--read-only","--project-ref=STAGING_REF"] },
 "supabase-prod":    { "command": ".claude/mcp/with-dotenv.sh",
-  "args": ["--","npx","-y","@supabase/mcp-server-supabase@latest","--read-only","--project-ref=PROD_REF"] }
+  "args": ["--need","SUPABASE_ACCESS_TOKEN","--","npx","-y","@supabase/mcp-server-supabase@latest","--read-only","--project-ref=PROD_REF"] }
 ```
 
 Ready-made: `presets/supabase-multi-env.json`. **Keep prod `--read-only`** — a
