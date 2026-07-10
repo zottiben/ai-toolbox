@@ -301,9 +301,17 @@ you to `/mcp`:
 | `expo` | official Expo (remote) | OAuth via `/mcp` | EAS build triage, TestFlight crash/review, RN DevTools | covers much of an "App Store Connect" need |
 | `sentry` | official Sentry (remote) | OAuth via `/mcp` | crash RCA (Seer) in-editor | stdio alt: `npx @sentry/mcp-server` |
 | `pixellab` | official PixelLab (remote) | `PIXELLAB_API_TOKEN` (in repo `.env`) | generate pixel-art characters, animations, tilesets (4/8-dir sprites, isometric, terrain) — game-art asset gen | reads the token from `.env` at connect time via `headersHelper` (needs recent Claude Code, ≥ v2.1.193); token at pixellab.ai → sign in; game/pixel-art only |
+| `unity` | `CoplayDev/unity-mcp` | none | drive the Unity Editor — scenes, GameObjects, play-mode, run tests, edit scripts; the game "see it actually work" | needs `uv` + the MCP-for-Unity package; `--directory` defaults to the **macOS** server path (see note) |
 
-**Adopt these too:** **Unity** (`CoplayDev/unity-mcp`, self-configures via *Window →
-MCP for Unity → Configure*), **Postgres MCP Pro** (`crystaldba/postgres-mcp`, needs
+> **Unity setup.** The `unity` preset needs the MCP-for-Unity package in your project
+> (Unity → Package Manager → *Add from git URL* →
+> `https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity#main`) plus
+> [`uv`](https://docs.astral.sh/uv/). The preset's `--directory` points at the **macOS**
+> default server path (`~/Library/Application Support/UnityMCP/UnityMcpServer/src`); on
+> Linux/Windows or a custom install, run *Window → MCP for Unity → Configure All Detected
+> Clients* — it detects Claude Code and writes the exact path for you.
+
+**Adopt these too:** **Postgres MCP Pro** (`crystaldba/postgres-mcp`, needs
 `DATABASE_URI` — avoid the archived `server-postgres`, unpatched SQLi), **GitHub**
 (official — scope its toolsets, or just use `gh` + `skills/cli/gh`), **ClickUp** /
 **Resend** (only for real task/broadcast management). Package names/flags evolve —

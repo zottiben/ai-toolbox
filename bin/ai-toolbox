@@ -146,7 +146,9 @@ PY
   fi
 
   # secrets to set: ${VAR} placeholders resolve from the process environment...
-  local vars; vars=$(grep -hoE '\$\{[A-Z_][A-Z0-9_]*\}' "${presets[@]}" 2>/dev/null | sort -u || true)
+  # (skip shell basics like ${HOME} — those are always set, not secrets to configure)
+  local vars; vars=$(grep -hoE '\$\{[A-Z_][A-Z0-9_]*\}' "${presets[@]}" 2>/dev/null \
+    | grep -vE '^\$\{(HOME|USER|LOGNAME|PATH|PWD|SHELL|TMPDIR|LANG|TERM)\}$' | sort -u || true)
   if [ -n "$vars" ]; then
     warn "Set these in your environment before use (never inline a token):"
     printf '    %s\n' $vars >&2
