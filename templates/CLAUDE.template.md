@@ -13,6 +13,6 @@ OPTIONAL: Claude-Code-only notes below. Delete this block if unused.
 Only put things here that genuinely don't belong in the cross-harness AGENTS.md:
 
 - Preferred skills in this repo (e.g. use /verify to smoke-test before pushing).
-- Preferred MCPs (e.g. use the ios-simulator MCP to verify mobile changes).
+- Preferred MCPs (e.g. use the mobile MCP to verify mobile changes on a simulator/emulator).
 - Claude-Code-specific gotchas.
 -->

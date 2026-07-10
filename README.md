@@ -271,11 +271,11 @@ your environment.
 | **claude-in-chrome** | you need a real Chrome you're logged into — authenticated flows, apps behind a login, acting as yourself. |
 | **figma** | implementing a design — pull frames, measurements, colours, tokens. Feeds the design-system layer. |
 | **clickup** | pulling ticket/task context into the work, or updating status. The planning source of truth. |
-| **ios-simulator** | verifying an Expo / React Native change — build, run, tap, screenshot. The mobile "see it work". |
+| **mobile** | verifying an Expo / React Native change on an Android emulator or iOS simulator — run, tap, type, screenshot. The mobile "see it work". |
 | **unity** | game dev — drive the editor, enter play mode, run tests, inspect the scene. The game "see it work". |
 
 The through-line: prefer the MCP that lets you *verify the real thing*
-(chrome-devtools / ios-simulator / unity), *pull source-of-truth context* (figma /
+(chrome-devtools / mobile / unity), *pull source-of-truth context* (figma /
 clickup), or *act as the user* (claude-in-chrome). A project's `AGENTS.md` should
 name which to use. Config lives per harness: Claude Code project `.mcp.json` or
 global `~/.claude.json`; Codex `~/.codex/config.toml`; OpenCode its own file.
@@ -296,6 +296,7 @@ you to `/mcp`:
 | `context7` | official Upstash | none | version-correct library docs — kills hallucinated APIs | cheapest high-ROI install |
 | `chrome-devtools` | official Google | none | CWV / Lighthouse / network / perf | profiling, not e2e |
 | `playwright` | official Microsoft | none | a11y-tree e2e automation ("does it work") | pairs with chrome-devtools |
+| `mobile` | `mobile-next/mobile-mcp` (`@mobilenext/mobile-mcp`) | none | drive an Android emulator **or** iOS simulator (also real devices) — screenshot, tap, type, swipe, inspect UI; the mobile "see it actually work" | Node ≥ 22; Android needs Platform Tools + SDK, iOS needs Xcode (macOS); telemetry disabled in preset |
 | `figma-framelink` | `GLips/Figma-Context-MCP` | `FIGMA_API_KEY` | pull design context on any Figma plan | official Dev-Mode MCP is better *with* a paid seat |
 | `expo` | official Expo (remote) | OAuth via `/mcp` | EAS build triage, TestFlight crash/review, RN DevTools | covers much of an "App Store Connect" need |
 | `sentry` | official Sentry (remote) | OAuth via `/mcp` | crash RCA (Seer) in-editor | stdio alt: `npx @sentry/mcp-server` |
