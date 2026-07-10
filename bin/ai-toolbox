@@ -107,17 +107,16 @@ PY
 }
 
 # ----------------------------------------------------------------------------
-# mcp — merge preset(s) into .mcp.json (+ auto-drop with-dotenv when used)
+# mcp — merge preset(s) into .mcp.json (+ auto-drop any helper scripts they use)
 # ----------------------------------------------------------------------------
 cmd_mcp() {
   need_py
   [ $# -gt 0 ] || die "usage: ai-toolbox mcp <preset...>   (see 'ai-toolbox list')"
-  local presets=() wants_dotenv=0
+  local presets=()
   for n in "$@"; do
     local p="$TOOLBOX_ROOT/mcp/presets/${n%.json}.json"
     [ -f "$p" ] || die "no such preset: $n (see 'ai-toolbox list')"
     presets+=("$p")
-    grep -q 'with-dotenv.sh' "$p" && wants_dotenv=1
   done
   local tgt="$REPO/.mcp.json"
   python3 - "$tgt" "${presets[@]}" <<'PY'
@@ -133,12 +132,33 @@ with open(tgt_path, "w") as f:
     json.dump(tgt, f, indent=2); f.write("\n")
 PY
   for n in "$@"; do ok "mcp   $(basename "${n%.json}")  ->  .mcp.json"; done
-  [ "$wants_dotenv" -eq 1 ] && { info "This preset loads secrets via with-dotenv.sh — installing it."; cmd_with_dotenv; }
-  # surface the secrets the merged servers expect
+
+  # copy any repo mcp helper scripts the preset references (with-dotenv.sh, dotenv-header.sh, …)
+  local helpers h
+  helpers=$(grep -hoE '\.claude/mcp/[A-Za-z0-9_-]+\.sh' "${presets[@]}" 2>/dev/null | sed 's#.*/##' | sort -u || true)
+  if [ -n "$helpers" ]; then
+    mkdir -p "$REPO/.claude/mcp"
+    for h in $helpers; do
+      [ -f "$TOOLBOX_ROOT/mcp/$h" ] || continue
+      cp "$TOOLBOX_ROOT/mcp/$h" "$REPO/.claude/mcp/" && chmod +x "$REPO/.claude/mcp/$h"
+      ok "mcp   $h  ->  .claude/mcp/"
+    done
+  fi
+
+  # secrets to set: ${VAR} placeholders resolve from the process environment...
   local vars; vars=$(grep -hoE '\$\{[A-Z_][A-Z0-9_]*\}' "${presets[@]}" 2>/dev/null | sort -u || true)
   if [ -n "$vars" ]; then
-    warn "Set these before use (env or .env — never inline a token):"
+    warn "Set these in your environment before use (never inline a token):"
     printf '    %s\n' $vars >&2
+  fi
+  # ...and vars read straight from the repo .env at connect time (via --need / dotenv-header.sh)
+  local envvars
+  envvars=$( { grep -hoE '"--need",[[:space:]]*"[A-Z_][A-Z0-9_]*"' "${presets[@]}"
+               grep -hoE 'dotenv-header\.sh[[:space:]]+[A-Z_][A-Z0-9_]*' "${presets[@]}"; } 2>/dev/null \
+             | grep -oE '[A-Z_][A-Z0-9_]*' | sort -u || true)
+  if [ -n "$envvars" ]; then
+    warn "Put these in the repo's .env (read at connect time — no export needed):"
+    printf '    %s\n' $envvars >&2
   fi
   info "Restart Claude Code in this repo, then run /mcp to connect (and complete any OAuth)."
 }

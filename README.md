@@ -8,20 +8,11 @@ It's a **personal leverage tool.** Its only job is to make *you* faster and keep
 minutes, and never let the tooling get in the model's way. It is not a framework
 and it does not think it knows better than you.
 
-**Contents:** [Why](#why-this-exists) · [The 7 laws](#the-7-laws-how-we-keep-this-from-rotting)
+**Contents:** [The 7 laws](#the-7-laws-how-we-keep-this-from-rotting)
 · [Layout](#repository-layout) · [Quick start](#quick-start) · [The CLI](#the-ai-toolbox-cli)
 · [Knowledge files](#knowledge-files-agentsmd--claudemd--rulesmd) · [Templates](#templates)
 · [Starters](#starters) · [Skills](#skills) · [Hooks](#hooks) · [MCP](#mcp)
-· [Background automation](#background-automation) · [Examples](#examples) · [Status](#status)
-
-## Why this exists
-
-It replaces a homegrown framework (Software Teams / JDI) that drifted into
-~89k tokens of always-on process — 500-line commands, mandatory multi-agent
-gates, an identity override. In practice that made the models **lazier, slower,
-lower-quality, more prone to break things, and more likely to state wrong
-information.** This toolkit is the opposite bet: minimal surface, native-first,
-your judgment left intact.
+· [Background automation](#background-automation) · [Examples](#examples)
 
 ## The 7 laws (how we keep this from rotting)
 
@@ -308,6 +299,7 @@ you to `/mcp`:
 | `figma-framelink` | `GLips/Figma-Context-MCP` | `FIGMA_API_KEY` | pull design context on any Figma plan | official Dev-Mode MCP is better *with* a paid seat |
 | `expo` | official Expo (remote) | OAuth via `/mcp` | EAS build triage, TestFlight crash/review, RN DevTools | covers much of an "App Store Connect" need |
 | `sentry` | official Sentry (remote) | OAuth via `/mcp` | crash RCA (Seer) in-editor | stdio alt: `npx @sentry/mcp-server` |
+| `pixellab` | official PixelLab (remote) | `PIXELLAB_API_TOKEN` (in repo `.env`) | generate pixel-art characters, animations, tilesets (4/8-dir sprites, isometric, terrain) — game-art asset gen | reads the token from `.env` at connect time via `headersHelper` (needs recent Claude Code, ≥ v2.1.193); token at pixellab.ai → sign in; game/pixel-art only |
 
 **Adopt these too:** **Unity** (`CoplayDev/unity-mcp`, self-configures via *Window →
 MCP for Unity → Configure*), **Postgres MCP Pro** (`crystaldba/postgres-mcp`, needs
@@ -316,13 +308,25 @@ MCP for Unity → Configure*), **Postgres MCP Pro** (`crystaldba/postgres-mcp`, 
 **Resend** (only for real task/broadcast management). Package names/flags evolve —
 verify against each server's upstream README before trusting a preset.
 
-**Secrets from a root `.env`.** `${VARS}` resolve from the *process* environment, so
-a token that lives only in `.env` won't be found unless sourced. Run the server
-through **`with-dotenv.sh`** (`ai-toolbox with-dotenv`, or `ai-toolbox mcp` drops it
-automatically for presets that use it): it loads `.env` at launch, then execs the
-server. Set the server's `command` to `.claude/mcp/with-dotenv.sh` and put the real
-command after a `--`; `--need VAR` documents + requires a var, `--env-file` picks
-another file, `--set TGT=SRC` remaps a per-env token name.
+**Secrets from a root `.env`.** `${VARS}` in a config resolve from the environment
+Claude Code was *launched* with — it does **not** auto-load a repo `.env`, and an
+unset `${VAR}` with no default makes it fail to parse the config. So a token that
+lives only in `.env` needs a bridge, and it differs by transport:
+
+- **stdio servers** — run through **`with-dotenv.sh`** (`ai-toolbox with-dotenv`, or
+  `ai-toolbox mcp` drops it automatically for presets that use it): it loads `.env`
+  at launch, then execs the server. Set the server's `command` to
+  `.claude/mcp/with-dotenv.sh` and put the real command after a `--`; `--need VAR`
+  documents + requires a var, `--env-file` picks another file, `--set TGT=SRC` remaps
+  a per-env token name.
+- **remote HTTP servers** — there's no local process to wrap, so a static
+  `Authorization: Bearer ${VAR}` header can't read `.env`. Use **`headersHelper`** — a
+  command Claude Code runs at *connect time* whose JSON stdout becomes the request
+  headers. **`dotenv-header.sh`** does this: `"headersHelper": ".claude/mcp/dotenv-header.sh
+  PIXELLAB_API_TOKEN"` reads the token from `.env` and emits `{"Authorization":"Bearer …"}`.
+  `ai-toolbox mcp` drops the helper automatically (see the `pixellab` preset). Needs a
+  recent Claude Code (`headersHelper`, ≥ v2.1.193); it runs arbitrary shell, so it
+  executes only after you accept the workspace-trust prompt.
 
 **Multiple environments.** Add one server entry per env (they differ only by
 `--project-ref`; refs aren't secret). A Supabase PAT is account-level, so the same
@@ -368,19 +372,3 @@ Match their shape: a tight header (stack + layout + real commands), then a short
 of *only the non-obvious, get-it-wrong-without-being-told* rules — each with the
 rule, why it matters, and how it's enforced. If yours grows past ~100 lines, run the
 `lint` skill on it.
-
-## Status
-
-- [x] Format + convention proven (a ~90-line `AGENTS.md` reliably steers a fresh
-      model on hard, safety-critical rules — validated adversarially, 3/3)
-- [x] Agnostic structure: templates + starters + skills + examples
-- [x] The three templates (`AGENTS` / `CLAUDE` / `RULES`)
-- [x] Group 1 skills: `init` (generator), `capture` (gotcha flywheel), `lint` (health-check)
-- [x] Group 3 (starter library) — stack snippets + agent starters
-- [x] Examples — `relik` (SaaS) + `keepy-uppy` (Unity) — format proven on a SaaS *and* a game
-- [x] Design layer — 4 greenfield templates + mode-aware generator
-- [x] Group 2 — `pre-pr` gate + reproduce-before-you-fix norm (in base charter)
-- [x] Group 4 (ergonomics & governance) — portable MCP config + self-audit skill + feature-brief template
-- [x] Bootstrapper — `install.sh` + the `ai-toolbox` CLI (one-command per-repo setup); docs consolidated into this README
-- [~] Functional layer — hooks (tested) · MCP presets · CLI skills (fly/gh/supabase/eas/aws) · background layer · capture+init upgrades
-- [ ] Greenfield example (chief-of-geese); validate skills live; retire Software Teams / JDI from repos
