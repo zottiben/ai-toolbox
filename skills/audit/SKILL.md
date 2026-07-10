@@ -11,7 +11,8 @@ footprint tally. This is the guard that ai-toolbox never turns into Software Tea
 1. **Footprint.** Tally words/tokens across `templates/`, `starters/`, `skills/`.
    Flag if the *always-on* surface (the base charter + anything wired into global
    config) grows past a tiny budget. Flag any single file over ~150 lines, or any
-   skill over ~80.
+   skill over ~80 — **except `README.md`**, which is reference docs (never loaded
+   into context), so length there is fine.
 2. **Duplication.** The same rule/guidance repeated across snippets, templates, or
    skills. One home per fact.
 3. **Process creep.** Any skill drifting from recipe → program: mandatory

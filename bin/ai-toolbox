@@ -1,0 +1,379 @@
+#!/usr/bin/env bash
+# ai-toolbox — set up ai-toolbox pieces in a repo with one command.
+#
+# The deterministic hands of the toolkit: copy hooks, merge settings.json /
+# .mcp.json, copy skills, print rule snippets — idempotently, from any repo.
+# `/init` (the skill) is the model-driven brain that decides WHAT to install and
+# calls these subcommands; `ai-toolbox bootstrap` is the shell-only equivalent.
+#
+# It reads the ai-toolbox's own directories at runtime, so nothing here duplicates
+# their contents and `ai-toolbox list` never drifts. JSON merges use python3 (a
+# dedup-union merge is python's job); every write is idempotent.
+#
+# Usage: ai-toolbox <command> [args]   —   run `ai-toolbox help` for the full list.
+set -euo pipefail
+
+# --- locate the ai-toolbox (resolving symlinks, so a PATH symlink still works) ---
+_self="${BASH_SOURCE[0]}"
+while [ -h "$_self" ]; do
+  _dir=$(cd -P "$(dirname "$_self")" && pwd)
+  _self=$(readlink "$_self")
+  case "$_self" in /*) ;; *) _self="$_dir/$_self" ;; esac
+done
+TOOLBOX_ROOT="${AI_TOOLBOX:-$(cd -P "$(dirname "$_self")/.." && pwd)}"
+
+# --- output helpers (color only on a tty, honoring NO_COLOR) ---
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  _dim=$'\033[2m'; _grn=$'\033[32m'; _ylw=$'\033[33m'; _red=$'\033[31m'; _bld=$'\033[1m'; _rst=$'\033[0m'
+else
+  _dim=; _grn=; _ylw=; _red=; _bld=; _rst=
+fi
+ok()   { printf '%s✓%s %s\n'  "$_grn" "$_rst" "$*"; }
+info() { printf '%s%s%s\n'    "$_dim" "$*" "$_rst" >&2; }
+warn() { printf '%s! %s%s\n'  "$_ylw" "$*" "$_rst" >&2; }
+die()  { printf '%sai-toolbox: %s%s\n' "$_red" "$*" "$_rst" >&2; exit 1; }
+head_() { printf '\n%s%s%s\n' "$_bld" "$*" "$_rst"; }
+have() { command -v "$1" >/dev/null 2>&1; }
+need_py() { have python3 || die "python3 is required for JSON merging (jq alone can't do the dedup-union merge). Install python3."; }
+
+# --- global option pre-pass: pull out --repo from anywhere ---
+REPO=""
+_argv=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --repo) REPO="${2:?--repo needs a path}"; shift 2 ;;
+    --repo=*) REPO="${1#*=}"; shift ;;
+    *) _argv+=("$1"); shift ;;
+  esac
+done
+set -- ${_argv[@]+"${_argv[@]}"}
+: "${REPO:=$PWD}"
+[ -d "$REPO" ] || die "target repo not found: $REPO"
+
+# ----------------------------------------------------------------------------
+# hooks — copy hook scripts + merge their wiring into .claude/settings.json
+# ----------------------------------------------------------------------------
+cmd_hooks() {
+  need_py
+  local all=() names=()
+  for f in "$TOOLBOX_ROOT"/hooks/*.sh; do
+    b=$(basename "$f" .sh); [ "$b" = "_lib" ] && continue; all+=("$b")
+  done
+  if [ $# -eq 0 ]; then names=("${all[@]}"); else
+    for n in "$@"; do names+=("${n%.sh}"); done
+  fi
+  local dest="$REPO/.claude/hooks"
+  mkdir -p "$dest"
+  cp "$TOOLBOX_ROOT/hooks/_lib.sh" "$dest/" && chmod +x "$dest/_lib.sh"
+  local installed=""
+  for n in "${names[@]}"; do
+    local src="$TOOLBOX_ROOT/hooks/$n.sh"
+    [ -f "$src" ] || die "no such hook: $n (see 'ai-toolbox list')"
+    cp "$src" "$dest/" && chmod +x "$dest/$n.sh"
+    ok "hook  $n.sh"
+    installed="${installed:+$installed,}$n.sh"
+  done
+  # merge only the wiring for the hooks we actually installed
+  python3 - "$TOOLBOX_ROOT/hooks/settings.hooks.json" "$REPO/.claude/settings.json" "$installed" <<'PY'
+import json, os, sys
+src = json.load(open(sys.argv[1]))
+tgt_path = sys.argv[2]
+installed = set(x for x in sys.argv[3].split(",") if x)
+tgt = {}
+if os.path.exists(tgt_path):
+    with open(tgt_path) as f: tgt = json.load(f)
+tgt_hooks = tgt.setdefault("hooks", {})
+for event, matchers in src.get("hooks", {}).items():
+    tgt_list = tgt_hooks.setdefault(event, [])
+    for m in matchers:
+        inner = [h for h in m.get("hooks", [])
+                 if os.path.basename(h.get("command", "").strip()) in installed]
+        if not inner: continue
+        key = m.get("matcher")
+        existing = next((x for x in tgt_list if x.get("matcher") == key), None)
+        if existing is None:
+            existing = {k: v for k, v in m.items() if k != "hooks"}
+            existing["hooks"] = []
+            tgt_list.append(existing)
+        seen = {h.get("command") for h in existing["hooks"]}
+        for h in inner:
+            if h.get("command") not in seen:
+                existing["hooks"].append(h); seen.add(h.get("command"))
+with open(tgt_path, "w") as f:
+    json.dump(tgt, f, indent=2); f.write("\n")
+PY
+  ok "wired  .claude/settings.json"
+  info "Run /hooks in Claude Code to confirm they're registered. Needs jq or python3 on PATH."
+}
+
+# ----------------------------------------------------------------------------
+# mcp — merge preset(s) into .mcp.json (+ auto-drop with-dotenv when used)
+# ----------------------------------------------------------------------------
+cmd_mcp() {
+  need_py
+  [ $# -gt 0 ] || die "usage: ai-toolbox mcp <preset...>   (see 'ai-toolbox list')"
+  local presets=() wants_dotenv=0
+  for n in "$@"; do
+    local p="$TOOLBOX_ROOT/mcp/presets/${n%.json}.json"
+    [ -f "$p" ] || die "no such preset: $n (see 'ai-toolbox list')"
+    presets+=("$p")
+    grep -q 'with-dotenv.sh' "$p" && wants_dotenv=1
+  done
+  local tgt="$REPO/.mcp.json"
+  python3 - "$tgt" "${presets[@]}" <<'PY'
+import json, os, sys
+tgt_path = sys.argv[1]
+tgt = {"mcpServers": {}}
+if os.path.exists(tgt_path):
+    tgt = json.load(open(tgt_path)); tgt.setdefault("mcpServers", {})
+for p in sys.argv[2:]:
+    for name, cfg in json.load(open(p)).get("mcpServers", {}).items():
+        tgt["mcpServers"][name] = cfg
+with open(tgt_path, "w") as f:
+    json.dump(tgt, f, indent=2); f.write("\n")
+PY
+  for n in "$@"; do ok "mcp   $(basename "${n%.json}")  ->  .mcp.json"; done
+  [ "$wants_dotenv" -eq 1 ] && { info "This preset loads secrets via with-dotenv.sh — installing it."; cmd_with_dotenv; }
+  # surface the secrets the merged servers expect
+  local vars; vars=$(grep -hoE '\$\{[A-Z_][A-Z0-9_]*\}' "${presets[@]}" 2>/dev/null | sort -u || true)
+  if [ -n "$vars" ]; then
+    warn "Set these before use (env or .env — never inline a token):"
+    printf '    %s\n' $vars >&2
+  fi
+  info "Restart Claude Code in this repo, then run /mcp to connect (and complete any OAuth)."
+}
+
+# ----------------------------------------------------------------------------
+# skill — copy a skill (or a group like 'cli') into a skills dir
+# ----------------------------------------------------------------------------
+cmd_skill() {
+  local dest="$REPO/.claude/skills"
+  local names=()
+  for a in "$@"; do
+    case "$a" in --user) dest="$HOME/.claude/skills" ;; *) names+=("$a") ;; esac
+  done
+  [ ${#names[@]} -gt 0 ] || die "usage: ai-toolbox skill <name...> [--user]   (see 'ai-toolbox list')"
+  mkdir -p "$dest"
+  for n in "${names[@]}"; do
+    local src="$TOOLBOX_ROOT/skills/$n"
+    [ -d "$src" ] || die "no such skill: $n (see 'ai-toolbox list')"
+    if [ -f "$src/SKILL.md" ]; then
+      rm -rf "$dest/$(basename "$n")"; cp -R "$src" "$dest/$(basename "$n")"
+      ok "skill $n  ->  $dest/$(basename "$n")"
+    else
+      # a group dir (e.g. cli) — install each child skill flat
+      for child in "$src"/*/; do
+        [ -f "$child/SKILL.md" ] || continue
+        local cb; cb=$(basename "$child")
+        rm -rf "$dest/$cb"; cp -R "${child%/}" "$dest/$cb"
+        ok "skill $n/$cb  ->  $dest/$cb"
+      done
+    fi
+  done
+}
+
+# ----------------------------------------------------------------------------
+# rules — PRINT stack snippets to stdout (they get inlined into AGENTS.md)
+# ----------------------------------------------------------------------------
+cmd_rules() {
+  [ $# -gt 0 ] || die "usage: ai-toolbox rules <stack...>   (see 'ai-toolbox list')"
+  for n in "$@"; do
+    local f="$TOOLBOX_ROOT/starters/rules/${n%.md}.md"
+    [ -f "$f" ] || die "no such rule snippet: $n (see 'ai-toolbox list')"
+    printf '\n# ===== %s (starters/rules/%s.md) =====\n\n' "$n" "${n%.md}"
+    cat "$f"
+  done
+  info "Snippets are seeds — paste the parts that apply into AGENTS.md, delete the rest. Nothing was written."
+}
+
+# ----------------------------------------------------------------------------
+# with-dotenv — drop the .env loader used by some MCP presets
+# ----------------------------------------------------------------------------
+cmd_with_dotenv() {
+  mkdir -p "$REPO/.claude/mcp"
+  cp "$TOOLBOX_ROOT/mcp/with-dotenv.sh" "$REPO/.claude/mcp/" && chmod +x "$REPO/.claude/mcp/with-dotenv.sh"
+  ok "mcp   with-dotenv.sh  ->  .claude/mcp/"
+}
+
+# ----------------------------------------------------------------------------
+# base-charter — append the one always-on artifact into ~/.claude/CLAUDE.md
+# ----------------------------------------------------------------------------
+cmd_base_charter() {
+  local tgt="${1:-$HOME/.claude/CLAUDE.md}"
+  local marker="<!-- ai-toolbox:base-charter -->"
+  mkdir -p "$(dirname "$tgt")"
+  if [ -f "$tgt" ] && grep -qF "$marker" "$tgt"; then
+    ok "base charter already present in $tgt (nothing to do)"; return 0
+  fi
+  { printf '\n%s\n' "$marker"; cat "$TOOLBOX_ROOT/starters/base-charter.md"; printf '%s\n' "$marker"; } >> "$tgt"
+  ok "appended base charter -> $tgt"
+  info "This is the one always-on artifact — do this once per machine, not per repo."
+}
+
+# ----------------------------------------------------------------------------
+# stack detection -> recommendation (shared by recommend + bootstrap)
+# ----------------------------------------------------------------------------
+REC_HOOKS=(); REC_MCP=(); REC_SKILLS=(); REC_RULES=(); DETECTED=()
+_has() { [ -e "$REPO/$1" ]; }
+_pkg_has() { [ -f "$REPO/package.json" ] && grep -q "\"$1\"" "$REPO/package.json"; }
+compute_reco() {
+  REC_HOOKS=(format-on-edit session-context guard-irreversible conventional-commit)
+  REC_MCP=(context7)
+  REC_SKILLS=(pre-pr capture lint)
+  REC_RULES=(); DETECTED=()
+  local generated=0
+  if [ -f "$REPO/package.json" ]; then
+    DETECTED+=("node/ts"); REC_RULES+=(typescript)
+    if _pkg_has react || _pkg_has next; then
+      DETECTED+=("react"); REC_RULES+=(react); REC_MCP+=(chrome-devtools playwright)
+    fi
+    _pkg_has vue && { DETECTED+=("vue"); REC_RULES+=(vue); REC_MCP+=(chrome-devtools playwright); }
+    if _has app.json || _has app.config.js || _has app.config.ts || _pkg_has expo; then
+      DETECTED+=("expo"); REC_RULES+=(expo); REC_MCP+=(expo); REC_SKILLS+=(cli/eas)
+    fi
+  fi
+  if _has supabase || _pkg_has "@supabase/supabase-js"; then
+    DETECTED+=("supabase"); REC_MCP+=(supabase); REC_SKILLS+=(cli/supabase); REC_RULES+=(supabase)
+  fi
+  _has fly.toml && { DETECTED+=("fly"); REC_SKILLS+=(cli/fly); }
+  _has .github && { DETECTED+=("github"); REC_SKILLS+=(cli/gh); }
+  _has go.mod && { DETECTED+=("go"); REC_RULES+=(go); }
+  { _has composer.json && grep -q laravel "$REPO/composer.json" 2>/dev/null; } && { DETECTED+=("laravel"); REC_RULES+=(laravel); }
+  if _has ProjectSettings/ProjectVersion.txt; then
+    DETECTED+=("unity"); REC_RULES+=(unity); generated=1
+    info "Unity: the unity MCP self-configures (Window -> MCP for Unity -> Configure) — no preset."
+  fi
+  { _has codegen.yml || _has codegen.ts || _has buf.gen.yaml || _has openapi.yaml; } && generated=1
+  [ "$generated" -eq 1 ] && REC_HOOKS+=(protect-generated)
+  [ ${#DETECTED[@]} -gt 0 ] || DETECTED=("unknown — generic set")
+}
+
+_print_reco() {
+  head_ "Detected: ${DETECTED[*]}"
+  printf '  %-8s %s\n' "hooks"  "${REC_HOOKS[*]}"
+  printf '  %-8s %s\n' "mcp"    "${REC_MCP[*]}"
+  printf '  %-8s %s\n' "skills" "${REC_SKILLS[*]}"
+  printf '  %-8s %s%s\n' "rules"  "${REC_RULES[*]:-(none)}" "  (inline into AGENTS.md)"
+}
+
+cmd_recommend() { compute_reco; _print_reco; info "Run 'ai-toolbox bootstrap' to install (with confirmation), or a per-group command."; }
+
+# ----------------------------------------------------------------------------
+# bootstrap — recommend, confirm each group, install (shell-only smart path)
+# ----------------------------------------------------------------------------
+cmd_bootstrap() {
+  local yes=0 dry=0
+  for a in "$@"; do case "$a" in --yes|-y) yes=1 ;; --dry-run) dry=1 ;; esac; done
+  compute_reco; _print_reco
+  [ "$dry" -eq 1 ] && { info "--dry-run: nothing installed."; return 0; }
+  if [ "$yes" -eq 0 ] && [ ! -t 0 ]; then
+    die "not a tty — pass --yes to install non-interactively (or run each group by hand)."
+  fi
+  _confirm() { # $1 = prompt
+    [ "$yes" -eq 1 ] && return 0
+    local reply; printf '%s [Y/n] ' "$1" >&2; read -r reply </dev/tty || reply=""
+    case "$reply" in [nN]*) return 1 ;; *) return 0 ;; esac
+  }
+  _confirm "Install hooks (${REC_HOOKS[*]})?"   && cmd_hooks "${REC_HOOKS[@]}"
+  _confirm "Add MCPs (${REC_MCP[*]})?"          && cmd_mcp "${REC_MCP[@]}"
+  _confirm "Install skills (${REC_SKILLS[*]})?" && cmd_skill "${REC_SKILLS[@]}"
+  if [ ${#REC_RULES[@]} -gt 0 ] && _confirm "Show rule snippets to inline (${REC_RULES[*]})?"; then
+    cmd_rules "${REC_RULES[@]}"
+  fi
+  head_ "Next: export any MCP secrets shown above, restart Claude Code, run /mcp to auth."
+}
+
+# ----------------------------------------------------------------------------
+# init — scaffold the knowledge-file skeletons, then bootstrap the functional layer
+# ----------------------------------------------------------------------------
+cmd_init() {
+  local dry=0
+  for a in "$@"; do [ "$a" = "--dry-run" ] && dry=1; done
+  if [ "$dry" -eq 0 ]; then
+    if [ -f "$REPO/AGENTS.md" ]; then info "AGENTS.md already exists — leaving it."
+    else cp "$TOOLBOX_ROOT/templates/AGENTS.template.md" "$REPO/AGENTS.md"; ok "scaffolded AGENTS.md (skeleton — fill in stack/commands/rules)"; fi
+    if [ -f "$REPO/CLAUDE.md" ]; then info "CLAUDE.md already exists — leaving it."
+    else cp "$TOOLBOX_ROOT/templates/CLAUDE.template.md" "$REPO/CLAUDE.md"; ok "scaffolded CLAUDE.md (@AGENTS.md adapter)"; fi
+  fi
+  cmd_bootstrap "$@"
+  [ "$dry" -eq 0 ] && head_ "Fill in AGENTS.md by hand, or run the /toolbox-init skill in Claude Code to author it by interview (it detects the stack and asks for the non-obvious rules)."
+  return 0
+}
+
+# ----------------------------------------------------------------------------
+# list — what the ai-toolbox offers (reads its own dirs, so it never drifts)
+# ----------------------------------------------------------------------------
+cmd_list() {
+  head_ "hooks"
+  for f in "$TOOLBOX_ROOT"/hooks/*.sh; do b=$(basename "$f" .sh); [ "$b" = "_lib" ] || printf '  %s\n' "$b"; done
+  head_ "mcp presets"
+  for f in "$TOOLBOX_ROOT"/mcp/presets/*.json; do printf '  %s\n' "$(basename "$f" .json)"; done
+  head_ "skills"
+  for d in "$TOOLBOX_ROOT"/skills/*/; do
+    b=$(basename "$d")
+    if [ -f "$d/SKILL.md" ]; then printf '  %s\n' "$b"
+    else for c in "$d"*/; do [ -f "$c/SKILL.md" ] && printf '  %s/%s\n' "$b" "$(basename "$c")"; done; fi
+  done
+  head_ "rules (inline into AGENTS.md)"
+  for f in "$TOOLBOX_ROOT"/starters/rules/*.md; do b=$(basename "$f" .md); [ "$b" = "README" ] || printf '  %s\n' "$b"; done
+}
+
+# ----------------------------------------------------------------------------
+# status — what's already installed in the target repo
+# ----------------------------------------------------------------------------
+cmd_status() {
+  head_ "Repo: $REPO"
+  local h="$REPO/.claude/hooks"
+  if [ -d "$h" ]; then
+    printf '  hooks:    '; ( cd "$h" && ls *.sh 2>/dev/null | grep -v '^_lib' | tr '\n' ' '; echo )
+  else printf '  hooks:    %s(none)%s\n' "$_dim" "$_rst"; fi
+  if [ -f "$REPO/.mcp.json" ] && have python3; then
+    printf '  mcp:      '; python3 -c 'import json,sys;print(" ".join(json.load(open(sys.argv[1])).get("mcpServers",{})) or "(none)")' "$REPO/.mcp.json"
+  else printf '  mcp:      %s(none)%s\n' "$_dim" "$_rst"; fi
+  if [ -d "$REPO/.claude/skills" ]; then
+    printf '  skills:   '; ( cd "$REPO/.claude/skills" && ls -d */ 2>/dev/null | tr -d '/' | tr '\n' ' '; echo )
+  else printf '  skills:   %s(none)%s\n' "$_dim" "$_rst"; fi
+  printf '  agents:   '; { [ -f "$REPO/AGENTS.md" ] && printf 'AGENTS.md '; [ -f "$REPO/CLAUDE.md" ] && printf 'CLAUDE.md'; [ -f "$REPO/AGENTS.md" ] || [ -f "$REPO/CLAUDE.md" ] || printf '%s(none)%s' "$_dim" "$_rst"; echo; }
+  info "'ai-toolbox recommend' suggests what to add for this stack; 'ai-toolbox list' shows everything."
+}
+
+# ----------------------------------------------------------------------------
+cmd_help() {
+  cat <<EOF
+${_bld}ai-toolbox${_rst} — set up ai-toolbox pieces in a repo (ai-toolbox root: $TOOLBOX_ROOT)
+
+  ${_bld}ai-toolbox init${_rst} [--yes|--dry-run]         scaffold AGENTS.md/CLAUDE.md + install the tailored set
+  ${_bld}ai-toolbox bootstrap${_rst} [--yes|--dry-run]    just the functional layer (hooks/MCPs/skills), no knowledge files
+  ${_bld}ai-toolbox recommend${_rst}                      show the recommended set for this repo (read-only)
+  ${_bld}ai-toolbox status${_rst}                         what's installed in this repo
+  ${_bld}ai-toolbox list${_rst}                           everything the ai-toolbox offers
+
+  ${_bld}ai-toolbox hooks${_rst} [name...]                copy hooks + wire .claude/settings.json (default: all)
+  ${_bld}ai-toolbox mcp${_rst} <preset...>                merge MCP preset(s) into .mcp.json
+  ${_bld}ai-toolbox skill${_rst} <name...> [--user]       copy skill(s) into .claude/skills (or ~/.claude/skills)
+  ${_bld}ai-toolbox rules${_rst} <stack...>               print rule snippets to inline into AGENTS.md
+  ${_bld}ai-toolbox with-dotenv${_rst}                    drop the .env loader for MCP secrets
+  ${_bld}ai-toolbox base-charter${_rst}                   append the always-on charter to ~/.claude/CLAUDE.md (per machine)
+
+Global: ${_bld}--repo <path>${_rst} targets another repo (default: current directory).
+Set ${_bld}AI_TOOLBOX${_rst} to override the ai-toolbox location. Idempotent — safe to re-run.
+EOF
+}
+
+# --- dispatch ---
+cmd="${1:-help}"; shift || true
+case "$cmd" in
+  hooks)         cmd_hooks "$@" ;;
+  mcp)           cmd_mcp "$@" ;;
+  skill|skills)  cmd_skill "$@" ;;
+  rules|rule)    cmd_rules "$@" ;;
+  with-dotenv)   cmd_with_dotenv "$@" ;;
+  base-charter)  cmd_base_charter "$@" ;;
+  recommend|reco) cmd_recommend "$@" ;;
+  init)          cmd_init "$@" ;;
+  bootstrap)     cmd_bootstrap "$@" ;;
+  list|ls)       cmd_list "$@" ;;
+  status|st)     cmd_status "$@" ;;
+  help|-h|--help) cmd_help ;;
+  *) die "unknown command: $cmd (run 'ai-toolbox help')" ;;
+esac

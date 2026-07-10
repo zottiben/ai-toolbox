@@ -1,9 +1,9 @@
 ---
 name: toolbox-init
-description: Scaffold a project's AGENTS.md (+ a thin CLAUDE.md adapter, and an optional RULES.md). Detects the stack — web, backend, mobile, OR game engine (Unity/Godot/Unreal) — auto-fills the mechanical facts from real manifests, composes matching starter rule-snippets, and interviews you for the non-obvious rules only you know. Use when setting up AI knowledge files for a new or existing project.
+description: Bootstrap a repo for the ai-toolbox end to end. Scaffolds the knowledge files (AGENTS.md + a thin CLAUDE.md adapter, optional RULES.md) AND sets up the functional layer — hooks, MCPs, and helper skills — installing only what the detected stack needs. Detects the stack (web, backend, mobile, OR game engine: Unity/Godot/Unreal), auto-fills mechanical facts from real manifests, composes matching starter rule-snippets, interviews you for the non-obvious rules only you know, then recommends and installs the tailored tooling via the `ai-toolbox` CLI. Use when setting up a new or existing project to use this toolkit.
 ---
 
-# toolbox init — scaffold project knowledge
+# ai-toolbox init — scaffold project knowledge
 
 Produce hand-owned knowledge files for a project. Automate the boilerplate;
 interview for the wisdom. **One-shot** — after this runs the files are yours,
@@ -88,3 +88,26 @@ rules" as *rule / why / how it's enforced*:
 
 Run `toolbox-lint` on the result and trim what it flags. Keep `AGENTS.md` lean —
 durable facts the model can't read from the code, nothing more.
+
+## 7. Bootstrap the functional layer (hooks · MCPs · skills)
+
+The knowledge files are only half the setup. Now wire the *functional* layer,
+installing **only what this stack needs** — the mechanics live in the `bin/ai-toolbox`
+CLI (this repo), so you just decide and confirm; never hand-copy files.
+
+- **See the tailored recommendation:** `ai-toolbox recommend` (run from the repo)
+  detects the stack and proposes a set per group (hooks · MCPs · skills; rules
+  were already inlined in step 3). Present it and let the user **trim each group** —
+  install only what they approve ("few, not a fleet"; never override their call).
+- **Install the approved groups** with the matching subcommands — e.g.
+  `ai-toolbox hooks format-on-edit session-context guard-irreversible conventional-commit`,
+  `ai-toolbox mcp context7 supabase`, `ai-toolbox skill pre-pr capture`. Each is
+  idempotent. (Or `ai-toolbox bootstrap` walks the same groups with a `[Y/n]` prompt.)
+- **Report the manual follow-ups the CLI can't do:** export the MCP secrets it
+  listed, restart Claude Code, run `/mcp` to connect/OAuth. For Unity, the unity
+  MCP self-configures (no preset).
+- **Greenfield:** hooks + helper skills still apply; hold off on stack-specific
+  MCPs until the stack actually lands.
+
+> Once per machine (not per repo): `ai-toolbox base-charter` appends the always-on
+> charter to `~/.claude/CLAUDE.md`. Skip if already done.
