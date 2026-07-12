@@ -231,6 +231,7 @@ Each becomes a `/slash-command` and is auto-selected by its `description`.
 | `init` | scaffold a project's `AGENTS.md` + bootstrap the functional layer (stack-aware, greenfield + brownfield) |
 | `capture` | turn a correction into a permanent `AGENTS.md` rule (the flywheel) |
 | `lint` | health-check a knowledge file for drift/bloat |
+| `handoff` | checkpoint before you clear/compact the context — commit + push + certify green + refresh a committed `HANDOFF.md` so a fresh session resumes exactly where you left off |
 | `pre-pr` | run the project's real checks + native review before you push |
 | `audit` | self-audit the whole toolbox for drift |
 | `babysit-pr` | shepherd a PR to green, triaging each item |

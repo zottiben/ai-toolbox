@@ -397,7 +397,7 @@ _pkg_has() { [ -f "$REPO/package.json" ] && grep -q "\"$1\"" "$REPO/package.json
 compute_reco() {
   REC_HOOKS=(format-on-edit session-context guard-irreversible conventional-commit)
   REC_MCP=(context7)
-  REC_SKILLS=(pre-pr capture lint)
+  REC_SKILLS=(pre-pr capture lint handoff)
   REC_RULES=(); DETECTED=()
   local generated=0
   if [ -f "$REPO/package.json" ]; then
