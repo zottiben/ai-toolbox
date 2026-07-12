@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # ai-toolbox — set up ai-toolbox pieces in a repo with one command.
 #
-# The deterministic hands of the toolkit: copy hooks, merge settings.json /
-# .mcp.json, copy skills, print rule snippets — idempotently, from any repo.
-# `/init` (the skill) is the model-driven brain that decides WHAT to install and
-# calls these subcommands; `ai-toolbox bootstrap` is the shell-only equivalent.
+# The deterministic hands of the toolkit: copy hooks, merge Claude Code settings.json /
+# .mcp.json AND Codex .codex/config.toml, copy skills, print rule snippets — idempotently,
+# from any repo. `/init` (the skill) is the model-driven brain that decides WHAT to install
+# and calls these subcommands; `ai-toolbox bootstrap` is the shell-only equivalent.
 #
-# It reads the ai-toolbox's own directories at runtime, so nothing here duplicates
-# their contents and `ai-toolbox list` never drifts. JSON merges use python3 (a
-# dedup-union merge is python's job); every write is idempotent.
+# One source, two harnesses: the same hook scripts, skill folders, and MCP presets are
+# converted at install time to each harness's on-disk format (never authored twice).
+# It reads the ai-toolbox's own directories at runtime, so nothing here duplicates their
+# contents and `ai-toolbox list` never drifts. JSON merges use python3; Codex TOML is
+# emitted by bin/lib/*.py (stdlib tomllib reads TOML but can't write it). Every write is
+# idempotent. See --harness in `ai-toolbox help`.
 #
 # Usage: ai-toolbox <command> [args]   —   run `ai-toolbox help` for the full list.
 set -euo pipefail
@@ -36,19 +39,45 @@ head_() { printf '\n%s%s%s\n' "$_bld" "$*" "$_rst"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 need_py() { have python3 || die "python3 is required for JSON merging (jq alone can't do the dedup-union merge). Install python3."; }
 
-# --- global option pre-pass: pull out --repo from anywhere ---
-REPO=""
+# --- global option pre-pass: pull out --repo / --harness from anywhere ---
+REPO=""; HARNESS=""
 _argv=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) REPO="${2:?--repo needs a path}"; shift 2 ;;
     --repo=*) REPO="${1#*=}"; shift ;;
+    --harness) HARNESS="${2:?--harness needs claude|codex|both}"; shift 2 ;;
+    --harness=*) HARNESS="${1#*=}"; shift ;;
     *) _argv+=("$1"); shift ;;
   esac
 done
 set -- ${_argv[@]+"${_argv[@]}"}
 : "${REPO:=$PWD}"
 [ -d "$REPO" ] || die "target repo not found: $REPO"
+
+# python helpers that emit/merge Codex config.toml (tomllib can read but not write TOML)
+CODEX_LIB="$TOOLBOX_ROOT/bin/lib"
+
+# --- harness selection: which coding-agent homes to write for ---
+# --harness claude|codex|both overrides; otherwise auto-detect the homes that exist.
+# When neither is present we default to Claude (backward-compatible).
+declare -a HARNESSES=()
+resolve_harnesses() {
+  case "$HARNESS" in
+    claude) HARNESSES=(claude) ;;
+    codex)  HARNESSES=(codex) ;;
+    both)   HARNESSES=(claude codex) ;;
+    "")
+      local has_codex=0 has_claude=0
+      { [ -d "$HOME/.codex" ] || [ -d "$REPO/.codex" ]; } && has_codex=1
+      { [ -d "$HOME/.claude" ] || [ -d "$REPO/.claude" ] || [ -f "$REPO/.mcp.json" ]; } && has_claude=1
+      if   [ "$has_codex" -eq 1 ] && [ "$has_claude" -eq 1 ]; then HARNESSES=(claude codex)
+      elif [ "$has_codex" -eq 1 ]; then HARNESSES=(codex)
+      else HARNESSES=(claude); fi
+      ;;
+    *) die "unknown --harness: $HARNESS (use claude|codex|both)" ;;
+  esac
+}
 
 # ----------------------------------------------------------------------------
 # hooks — copy hook scripts + merge their wiring into .claude/settings.json
@@ -62,18 +91,35 @@ cmd_hooks() {
   if [ $# -eq 0 ]; then names=("${all[@]}"); else
     for n in "$@"; do names+=("${n%.sh}"); done
   fi
-  local dest="$REPO/.claude/hooks"
-  mkdir -p "$dest"
-  cp "$TOOLBOX_ROOT/hooks/_lib.sh" "$dest/" && chmod +x "$dest/_lib.sh"
-  local installed=""
   for n in "${names[@]}"; do
-    local src="$TOOLBOX_ROOT/hooks/$n.sh"
-    [ -f "$src" ] || die "no such hook: $n (see 'ai-toolbox list')"
-    cp "$src" "$dest/" && chmod +x "$dest/$n.sh"
-    ok "hook  $n.sh"
+    [ -f "$TOOLBOX_ROOT/hooks/$n.sh" ] || die "no such hook: $n (see 'ai-toolbox list')"
+  done
+  resolve_harnesses
+  for h in "${HARNESSES[@]}"; do
+    case "$h" in
+      claude) _hooks_claude "${names[@]}" ;;
+      codex)  _hooks_codex  "${names[@]}" ;;
+    esac
+  done
+}
+
+# copy the shared hook scripts into <dir> and echo the CSV of installed <name>.sh
+_hooks_copy() {
+  local dir="$1"; shift
+  mkdir -p "$dir"
+  cp "$TOOLBOX_ROOT/hooks/_lib.sh" "$dir/" && chmod +x "$dir/_lib.sh"
+  local installed=""
+  for n in "$@"; do
+    cp "$TOOLBOX_ROOT/hooks/$n.sh" "$dir/" && chmod +x "$dir/$n.sh"
     installed="${installed:+$installed,}$n.sh"
   done
-  # merge only the wiring for the hooks we actually installed
+  printf '%s' "$installed"
+}
+
+# Claude Code: scripts in .claude/hooks + wiring merged into .claude/settings.json
+_hooks_claude() {
+  local installed; installed=$(_hooks_copy "$REPO/.claude/hooks" "$@")
+  for n in "$@"; do ok "hook  .claude/hooks/$n.sh"; done
   python3 - "$TOOLBOX_ROOT/hooks/settings.hooks.json" "$REPO/.claude/settings.json" "$installed" <<'PY'
 import json, os, sys
 src = json.load(open(sys.argv[1]))
@@ -103,7 +149,44 @@ with open(tgt_path, "w") as f:
     json.dump(tgt, f, indent=2); f.write("\n")
 PY
   ok "wired  .claude/settings.json"
-  info "Run /hooks in Claude Code to confirm they're registered. Needs jq or python3 on PATH."
+  info "Run /hooks in Claude Code to confirm they're registered."
+}
+
+# Codex: same scripts in .codex/hooks + [hooks] tables merged into .codex/config.toml.
+# Command paths are cwd-relative (Codex runs hooks from the session root — no
+# ${CLAUDE_PROJECT_DIR} needed). Bash-matched hooks fire today; Write/Edit (apply_patch)
+# firing is still maturing upstream (codex#16732).
+_hooks_codex() {
+  local installed; installed=$(_hooks_copy "$REPO/.codex/hooks" "$@")
+  for n in "$@"; do ok "hook  .codex/hooks/$n.sh"; done
+  python3 - "$TOOLBOX_ROOT/hooks/settings.hooks.json" "$REPO/.codex/config.toml" "$installed" "$CODEX_LIB" <<'PY'
+import json, os, sys
+sys.path.insert(0, sys.argv[4])
+import codex_toml as ct
+src = json.load(open(sys.argv[1]))
+cfg_path = sys.argv[2]
+installed = set(x for x in sys.argv[3].split(",") if x)
+patch = {}
+for event, matchers in src.get("hooks", {}).items():
+    outm = []
+    for m in matchers:
+        inner = []
+        for hk in m.get("hooks", []):
+            base = os.path.basename(hk.get("command", "").strip())
+            if base in installed:
+                nh = dict(hk); nh["command"] = ".codex/hooks/%s" % base
+                inner.append(nh)
+        if inner:
+            g = {k: v for k, v in m.items() if k != "hooks"}; g["hooks"] = inner
+            outm.append(g)
+    if outm: patch[event] = outm
+cfg = ct.load(cfg_path)
+ct.merge_hooks(cfg, patch)
+os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
+with open(cfg_path, "w") as f: f.write(ct.dumps(cfg))
+PY
+  ok "wired  .codex/config.toml [hooks]"
+  info "Codex trusts a hook only after you review it — run 'codex' and approve, or check /hooks."
 }
 
 # ----------------------------------------------------------------------------
@@ -118,8 +201,35 @@ cmd_mcp() {
     [ -f "$p" ] || die "no such preset: $n (see 'ai-toolbox list')"
     presets+=("$p")
   done
+  resolve_harnesses
+  for h in "${HARNESSES[@]}"; do
+    case "$h" in
+      claude) _mcp_claude "${presets[@]}" ;;
+      codex)  _mcp_codex  "${presets[@]}" ;;
+    esac
+  done
+  _mcp_report_secrets "${presets[@]}"
+}
+
+# copy the repo mcp helper scripts (with-dotenv.sh, dotenv-header.sh, …) named in <files>
+# into <dir>, matching them by the given path prefix (.claude/mcp/ or .codex/mcp/).
+_mcp_copy_helpers() {
+  local dir="$1" prefix="$2"; shift 2
+  local helpers h
+  helpers=$(grep -hoE "${prefix//./\\.}[A-Za-z0-9_-]+\.sh" "$@" 2>/dev/null | sed 's#.*/##' | sort -u || true)
+  [ -n "$helpers" ] || return 0
+  mkdir -p "$dir"
+  for h in $helpers; do
+    [ -f "$TOOLBOX_ROOT/mcp/$h" ] || continue
+    cp "$TOOLBOX_ROOT/mcp/$h" "$dir/" && chmod +x "$dir/$h"
+    ok "mcp   $h  ->  ${dir#$REPO/}/"
+  done
+}
+
+# Claude Code: merge preset mcpServers into .mcp.json (native Claude format)
+_mcp_claude() {
   local tgt="$REPO/.mcp.json"
-  python3 - "$tgt" "${presets[@]}" <<'PY'
+  python3 - "$tgt" "$@" <<'PY'
 import json, os, sys
 tgt_path = sys.argv[1]
 tgt = {"mcpServers": {}}
@@ -131,64 +241,91 @@ for p in sys.argv[2:]:
 with open(tgt_path, "w") as f:
     json.dump(tgt, f, indent=2); f.write("\n")
 PY
-  for n in "$@"; do ok "mcp   $(basename "${n%.json}")  ->  .mcp.json"; done
+  for p in "$@"; do ok "mcp   $(basename "${p%.json}")  ->  .mcp.json"; done
+  _mcp_copy_helpers "$REPO/.claude/mcp" ".claude/mcp/" "$@"
+}
 
-  # copy any repo mcp helper scripts the preset references (with-dotenv.sh, dotenv-header.sh, …)
-  local helpers h
-  helpers=$(grep -hoE '\.claude/mcp/[A-Za-z0-9_-]+\.sh' "${presets[@]}" 2>/dev/null | sed 's#.*/##' | sort -u || true)
-  if [ -n "$helpers" ]; then
-    mkdir -p "$REPO/.claude/mcp"
-    for h in $helpers; do
-      [ -f "$TOOLBOX_ROOT/mcp/$h" ] || continue
-      cp "$TOOLBOX_ROOT/mcp/$h" "$REPO/.claude/mcp/" && chmod +x "$REPO/.claude/mcp/$h"
-      ok "mcp   $h  ->  .claude/mcp/"
-    done
-  fi
+# Codex: convert presets to [mcp_servers.*] tables merged into .codex/config.toml,
+# then copy any helper scripts the converted config references.
+_mcp_codex() {
+  local tgt="$REPO/.codex/config.toml"
+  mkdir -p "$REPO/.codex"
+  local w; w=$(python3 "$CODEX_LIB/mcp_codex.py" "$tgt" "$@")
+  for p in "$@"; do ok "mcp   $(basename "${p%.json}")  ->  .codex/config.toml"; done
+  _mcp_copy_helpers "$REPO/.codex/mcp" ".codex/mcp/" "$tgt"
+  if [ -n "$w" ]; then printf '%s\n' "$w" | while IFS= read -r line; do warn "$line"; done; fi
+}
 
-  # secrets to set: ${VAR} placeholders resolve from the process environment...
-  # (skip shell basics like ${HOME} — those are always set, not secrets to configure)
-  local vars; vars=$(grep -hoE '\$\{[A-Z_][A-Z0-9_]*\}' "${presets[@]}" 2>/dev/null \
+# harness-aware follow-ups: which secrets to set, and how to connect
+_mcp_report_secrets() {
+  # ${VAR} placeholders resolve from the process env (skip always-set shell basics)
+  local vars; vars=$(grep -hoE '\$\{[A-Z_][A-Z0-9_]*\}' "$@" 2>/dev/null \
     | grep -vE '^\$\{(HOME|USER|LOGNAME|PATH|PWD|SHELL|TMPDIR|LANG|TERM)\}$' | sort -u || true)
   if [ -n "$vars" ]; then
     warn "Set these in your environment before use (never inline a token):"
     printf '    %s\n' $vars >&2
   fi
-  # ...and vars read straight from the repo .env at connect time (via --need / dotenv-header.sh)
+  # vars read from the repo .env at connect time (via --need / dotenv-header.sh / with-dotenv)
   local envvars
-  envvars=$( { grep -hoE '"--need",[[:space:]]*"[A-Z_][A-Z0-9_]*"' "${presets[@]}"
-               grep -hoE 'dotenv-header\.sh[[:space:]]+[A-Z_][A-Z0-9_]*' "${presets[@]}"; } 2>/dev/null \
+  envvars=$( { grep -hoE '"--need",[[:space:]]*"[A-Z_][A-Z0-9_]*"' "$@"
+               grep -hoE 'dotenv-header\.sh[[:space:]]+[A-Z_][A-Z0-9_]*' "$@"; } 2>/dev/null \
              | grep -oE '[A-Z_][A-Z0-9_]*' | sort -u || true)
   if [ -n "$envvars" ]; then
-    warn "Put these in the repo's .env (read at connect time — no export needed):"
+    warn "Put these in the repo's .env (read at launch via with-dotenv — no export needed):"
     printf '    %s\n' $envvars >&2
   fi
-  info "Restart Claude Code in this repo, then run /mcp to connect (and complete any OAuth)."
+  local h
+  for h in "${HARNESSES[@]}"; do
+    case "$h" in
+      claude) info "Claude Code: restart in this repo, then /mcp to connect (and complete any OAuth)." ;;
+      codex)  info "Codex: run 'codex mcp login <server>' for OAuth servers; restart codex to load .codex/config.toml." ;;
+    esac
+  done
 }
 
 # ----------------------------------------------------------------------------
 # skill — copy a skill (or a group like 'cli') into a skills dir
 # ----------------------------------------------------------------------------
+# SKILL.md is a cross-agent standard — the same folder works in both harnesses. Claude
+# Code reads .claude/skills/ (or ~/.claude/skills/); Codex reads .agents/skills/ (or
+# $HOME/.agents/skills/). We install the identical folder into each detected harness's dir.
 cmd_skill() {
-  local dest="$REPO/.claude/skills"
-  local names=()
+  local user=0 names=()
   for a in "$@"; do
-    case "$a" in --user) dest="$HOME/.claude/skills" ;; *) names+=("$a") ;; esac
+    case "$a" in --user) user=1 ;; *) names+=("$a") ;; esac
   done
   [ ${#names[@]} -gt 0 ] || die "usage: ai-toolbox skill <name...> [--user]   (see 'ai-toolbox list')"
-  mkdir -p "$dest"
   for n in "${names[@]}"; do
+    [ -d "$TOOLBOX_ROOT/skills/$n" ] || die "no such skill: $n (see 'ai-toolbox list')"
+  done
+  resolve_harnesses
+  local h dest
+  for h in "${HARNESSES[@]}"; do
+    case "$h" in
+      claude) [ "$user" -eq 1 ] && dest="$HOME/.claude/skills" || dest="$REPO/.claude/skills" ;;
+      codex)  [ "$user" -eq 1 ] && dest="$HOME/.agents/skills" || dest="$REPO/.agents/skills" ;;
+    esac
+    _skill_install "$dest" "${names[@]}"
+  done
+}
+
+_skill_install() {
+  local dest="$1"; shift
+  mkdir -p "$dest"
+  local n
+  for n in "$@"; do
     local src="$TOOLBOX_ROOT/skills/$n"
-    [ -d "$src" ] || die "no such skill: $n (see 'ai-toolbox list')"
     if [ -f "$src/SKILL.md" ]; then
       rm -rf "$dest/$(basename "$n")"; cp -R "$src" "$dest/$(basename "$n")"
-      ok "skill $n  ->  $dest/$(basename "$n")"
+      ok "skill $n  ->  ${dest/#$HOME/~}/$(basename "$n")"
     else
       # a group dir (e.g. cli) — install each child skill flat
+      local child cb
       for child in "$src"/*/; do
         [ -f "$child/SKILL.md" ] || continue
-        local cb; cb=$(basename "$child")
+        cb=$(basename "$child")
         rm -rf "$dest/$cb"; cp -R "${child%/}" "$dest/$cb"
-        ok "skill $n/$cb  ->  $dest/$cb"
+        ok "skill $n/$cb  ->  ${dest/#$HOME/~}/$cb"
       done
     fi
   done
@@ -212,24 +349,43 @@ cmd_rules() {
 # with-dotenv — drop the .env loader used by some MCP presets
 # ----------------------------------------------------------------------------
 cmd_with_dotenv() {
-  mkdir -p "$REPO/.claude/mcp"
-  cp "$TOOLBOX_ROOT/mcp/with-dotenv.sh" "$REPO/.claude/mcp/" && chmod +x "$REPO/.claude/mcp/with-dotenv.sh"
-  ok "mcp   with-dotenv.sh  ->  .claude/mcp/"
+  resolve_harnesses
+  local h d
+  for h in "${HARNESSES[@]}"; do
+    case "$h" in claude) d="$REPO/.claude/mcp" ;; codex) d="$REPO/.codex/mcp" ;; esac
+    mkdir -p "$d"
+    cp "$TOOLBOX_ROOT/mcp/with-dotenv.sh" "$d/" && chmod +x "$d/with-dotenv.sh"
+    ok "mcp   with-dotenv.sh  ->  ${d#$REPO/}/"
+  done
 }
 
 # ----------------------------------------------------------------------------
 # base-charter — append the one always-on artifact into ~/.claude/CLAUDE.md
 # ----------------------------------------------------------------------------
+# The one always-on artifact goes in each harness's GLOBAL config: Claude Code reads
+# ~/.claude/CLAUDE.md, Codex reads ~/.codex/AGENTS.md. An explicit path arg overrides.
 cmd_base_charter() {
-  local tgt="${1:-$HOME/.claude/CLAUDE.md}"
+  if [ $# -ge 1 ]; then _charter_append "$1"; return 0; fi
+  resolve_harnesses
+  local h
+  for h in "${HARNESSES[@]}"; do
+    case "$h" in
+      claude) _charter_append "$HOME/.claude/CLAUDE.md" ;;
+      codex)  _charter_append "$HOME/.codex/AGENTS.md" ;;
+    esac
+  done
+  info "This is the one always-on artifact — do this once per machine, not per repo."
+}
+
+_charter_append() {
+  local tgt="$1"
   local marker="<!-- ai-toolbox:base-charter -->"
   mkdir -p "$(dirname "$tgt")"
   if [ -f "$tgt" ] && grep -qF "$marker" "$tgt"; then
-    ok "base charter already present in $tgt (nothing to do)"; return 0
+    ok "base charter already present in ${tgt/#$HOME/~} (nothing to do)"; return 0
   fi
   { printf '\n%s\n' "$marker"; cat "$TOOLBOX_ROOT/starters/base-charter.md"; printf '%s\n' "$marker"; } >> "$tgt"
-  ok "appended base charter -> $tgt"
-  info "This is the one always-on artifact — do this once per machine, not per repo."
+  ok "appended base charter -> ${tgt/#$HOME/~}"
 }
 
 # ----------------------------------------------------------------------------
@@ -311,14 +467,19 @@ cmd_bootstrap() {
 cmd_init() {
   local dry=0
   for a in "$@"; do [ "$a" = "--dry-run" ] && dry=1; done
+  resolve_harnesses
   if [ "$dry" -eq 0 ]; then
+    # AGENTS.md is the cross-harness source of truth — Codex reads it natively, Claude via the adapter.
     if [ -f "$REPO/AGENTS.md" ]; then info "AGENTS.md already exists — leaving it."
     else cp "$TOOLBOX_ROOT/templates/AGENTS.template.md" "$REPO/AGENTS.md"; ok "scaffolded AGENTS.md (skeleton — fill in stack/commands/rules)"; fi
-    if [ -f "$REPO/CLAUDE.md" ]; then info "CLAUDE.md already exists — leaving it."
-    else cp "$TOOLBOX_ROOT/templates/CLAUDE.template.md" "$REPO/CLAUDE.md"; ok "scaffolded CLAUDE.md (@AGENTS.md adapter)"; fi
+    # CLAUDE.md is only the Claude Code adapter (@AGENTS.md) — skip it for a Codex-only target.
+    if printf '%s\n' "${HARNESSES[@]}" | grep -qx claude; then
+      if [ -f "$REPO/CLAUDE.md" ]; then info "CLAUDE.md already exists — leaving it."
+      else cp "$TOOLBOX_ROOT/templates/CLAUDE.template.md" "$REPO/CLAUDE.md"; ok "scaffolded CLAUDE.md (@AGENTS.md adapter)"; fi
+    fi
   fi
   cmd_bootstrap "$@"
-  [ "$dry" -eq 0 ] && head_ "Fill in AGENTS.md by hand, or run the /toolbox-init skill in Claude Code to author it by interview (it detects the stack and asks for the non-obvious rules)."
+  [ "$dry" -eq 0 ] && head_ "Fill in AGENTS.md by hand, or run the /toolbox-init skill to author it by interview (it detects the stack and asks for the non-obvious rules)."
   return 0
 }
 
@@ -343,19 +504,28 @@ cmd_list() {
 # ----------------------------------------------------------------------------
 # status — what's already installed in the target repo
 # ----------------------------------------------------------------------------
+_st_line() { printf '  %-8s' "$1:"; }
+_st_none() { printf '%s(none)%s\n' "$_dim" "$_rst"; }
 cmd_status() {
   head_ "Repo: $REPO"
-  local h="$REPO/.claude/hooks"
-  if [ -d "$h" ]; then
-    printf '  hooks:    '; ( cd "$h" && ls *.sh 2>/dev/null | grep -v '^_lib' | tr '\n' ' '; echo )
-  else printf '  hooks:    %s(none)%s\n' "$_dim" "$_rst"; fi
-  if [ -f "$REPO/.mcp.json" ] && have python3; then
-    printf '  mcp:      '; python3 -c 'import json,sys;print(" ".join(json.load(open(sys.argv[1])).get("mcpServers",{})) or "(none)")' "$REPO/.mcp.json"
-  else printf '  mcp:      %s(none)%s\n' "$_dim" "$_rst"; fi
-  if [ -d "$REPO/.claude/skills" ]; then
-    printf '  skills:   '; ( cd "$REPO/.claude/skills" && ls -d */ 2>/dev/null | tr -d '/' | tr '\n' ' '; echo )
-  else printf '  skills:   %s(none)%s\n' "$_dim" "$_rst"; fi
-  printf '  agents:   '; { [ -f "$REPO/AGENTS.md" ] && printf 'AGENTS.md '; [ -f "$REPO/CLAUDE.md" ] && printf 'CLAUDE.md'; [ -f "$REPO/AGENTS.md" ] || [ -f "$REPO/CLAUDE.md" ] || printf '%s(none)%s' "$_dim" "$_rst"; echo; }
+  printf '%sClaude Code%s\n' "$_bld" "$_rst"
+  if [ -d "$REPO/.claude/hooks" ]; then _st_line hooks; ( cd "$REPO/.claude/hooks" && ls *.sh 2>/dev/null | grep -v '^_lib' | tr '\n' ' '; echo )
+  else _st_line hooks; _st_none; fi
+  if [ -f "$REPO/.mcp.json" ] && have python3; then _st_line mcp; python3 -c 'import json,sys;print(" ".join(json.load(open(sys.argv[1])).get("mcpServers",{})) or "(none)")' "$REPO/.mcp.json"
+  else _st_line mcp; _st_none; fi
+  if [ -d "$REPO/.claude/skills" ]; then _st_line skills; ( cd "$REPO/.claude/skills" && ls -d */ 2>/dev/null | tr -d '/' | tr '\n' ' '; echo )
+  else _st_line skills; _st_none; fi
+
+  printf '%sCodex%s\n' "$_bld" "$_rst"
+  if [ -d "$REPO/.codex/hooks" ]; then _st_line hooks; ( cd "$REPO/.codex/hooks" && ls *.sh 2>/dev/null | grep -v '^_lib' | tr '\n' ' '; echo )
+  else _st_line hooks; _st_none; fi
+  if [ -f "$REPO/.codex/config.toml" ] && have python3; then _st_line mcp; python3 -c 'import tomllib,sys;d=tomllib.load(open(sys.argv[1],"rb"));print(" ".join(d.get("mcp_servers",{})) or "(none)")' "$REPO/.codex/config.toml"
+  else _st_line mcp; _st_none; fi
+  if [ -d "$REPO/.agents/skills" ]; then _st_line skills; ( cd "$REPO/.agents/skills" && ls -d */ 2>/dev/null | tr -d '/' | tr '\n' ' '; echo )
+  else _st_line skills; _st_none; fi
+
+  printf '%sKnowledge%s\n' "$_bld" "$_rst"
+  _st_line files; { [ -f "$REPO/AGENTS.md" ] && printf 'AGENTS.md '; [ -f "$REPO/CLAUDE.md" ] && printf 'CLAUDE.md'; [ -f "$REPO/AGENTS.md" ] || [ -f "$REPO/CLAUDE.md" ] || printf '%s(none)%s' "$_dim" "$_rst"; echo; }
   info "'ai-toolbox recommend' suggests what to add for this stack; 'ai-toolbox list' shows everything."
 }
 
@@ -370,14 +540,17 @@ ${_bld}ai-toolbox${_rst} — set up ai-toolbox pieces in a repo (ai-toolbox root
   ${_bld}ai-toolbox status${_rst}                         what's installed in this repo
   ${_bld}ai-toolbox list${_rst}                           everything the ai-toolbox offers
 
-  ${_bld}ai-toolbox hooks${_rst} [name...]                copy hooks + wire .claude/settings.json (default: all)
-  ${_bld}ai-toolbox mcp${_rst} <preset...>                merge MCP preset(s) into .mcp.json
-  ${_bld}ai-toolbox skill${_rst} <name...> [--user]       copy skill(s) into .claude/skills (or ~/.claude/skills)
+  ${_bld}ai-toolbox hooks${_rst} [name...]                copy hooks + wire settings.json / .codex config.toml (default: all)
+  ${_bld}ai-toolbox mcp${_rst} <preset...>                merge MCP preset(s) into .mcp.json / .codex/config.toml
+  ${_bld}ai-toolbox skill${_rst} <name...> [--user]       copy skill(s) into .claude/skills / .agents/skills
   ${_bld}ai-toolbox rules${_rst} <stack...>               print rule snippets to inline into AGENTS.md
   ${_bld}ai-toolbox with-dotenv${_rst}                    drop the .env loader for MCP secrets
-  ${_bld}ai-toolbox base-charter${_rst}                   append the always-on charter to ~/.claude/CLAUDE.md (per machine)
+  ${_bld}ai-toolbox base-charter${_rst}                   append the always-on charter to the harness global config (per machine)
 
 Global: ${_bld}--repo <path>${_rst} targets another repo (default: current directory).
+        ${_bld}--harness claude|codex|both${_rst} picks the target harness(es); default auto-detects
+        which homes exist (~/.claude, ~/.codex) and writes for those. Claude Code reads .claude/ +
+        .mcp.json; Codex reads .codex/config.toml + .agents/skills + ~/.codex/AGENTS.md.
 Set ${_bld}AI_TOOLBOX${_rst} to override the ai-toolbox location. Idempotent — safe to re-run.
 EOF
 }

@@ -1,6 +1,6 @@
 ---
 name: babysit-pr
-description: Watch a PR's CI to green — gather failing checks + review feedback, TRIAGE each item (fix / dismiss / escalate), fix the clear ones, lint, push, repeat up to a bounded number of rounds. Use to shepherd a PR through CI without blindly auto-fixing. Complements native /autofix-pr; this stays local and in-the-loop.
+description: Watch a PR's CI to green — gather failing checks + review feedback, TRIAGE each item (fix / dismiss / escalate), fix the clear ones, lint, push, repeat up to a bounded number of rounds. Use to shepherd a PR through CI without blindly auto-fixing. Complements native PR-autofix tooling; this stays local and in-the-loop.
 ---
 
 # babysit-pr — shepherd a PR to green (with triage)
@@ -19,5 +19,5 @@ Loop a PR to passing CI. The discipline that separates this from a churny bot:
 5. **Repeat** up to a bounded number of rounds (default 3). Still red after that →
    stop and hand back a summary. Don't churn.
 
-Bound it: cap the rounds and escalate rather than guess. Pair with `/loop` for
-hands-off watching: `/loop 10m /babysit-pr <pr>`.
+Bound it: cap the rounds and escalate rather than guess. Pair with a scheduled
+runner for hands-off watching (e.g. Claude Code's `/loop 10m /babysit-pr <pr>`).

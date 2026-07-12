@@ -1,7 +1,10 @@
 # ai-toolbox
 
 A portable, harness-agnostic toolkit that **complements** AI coding harnesses
-(Claude Code, Codex, OpenCode) instead of wrapping them in process.
+(Claude Code, Codex, OpenCode) instead of wrapping them in process. One source of
+truth, installed natively for each: the CLI writes Claude Code's `.claude/` +
+`.mcp.json` **and** Codex's `.codex/config.toml` + `.agents/skills/` from the same
+hook scripts, skill folders, and MCP presets — never authored twice.
 
 It's a **personal leverage tool.** Its only job is to make *you* faster and keep
 *you* in control — encode durable knowledge once, scaffold it into any project in
@@ -67,15 +70,18 @@ you — no more hand-copying files or merging JSON. Nothing here is all-or-nothi
 ```bash
 git clone <this repo> ~/Developer/ai-toolbox && cd ~/Developer/ai-toolbox
 ./install.sh                 # puts `ai-toolbox` on your PATH (no manual PATH edits)
-ai-toolbox base-charter      # appends the always-on charter to ~/.claude/CLAUDE.md
+ai-toolbox base-charter      # appends the always-on charter to each harness global config
 ```
+`base-charter` auto-detects which harness homes exist and writes to those:
+`~/.claude/CLAUDE.md` (Claude Code) and/or `~/.codex/AGENTS.md` (Codex). Every
+per-repo command does the same detection; `--harness claude|codex|both` overrides it.
 
 **Per repo — the smart path (recommended).** From inside the target repo:
 ```bash
 ai-toolbox init     # scaffolds AGENTS.md/CLAUDE.md + installs the tailored tooling you confirm
 ```
 Prefer the model to author `AGENTS.md` by interview? Install the skill once
-(`ai-toolbox skill init --user`) and run `/toolbox-init` in Claude Code instead — it
+(`ai-toolbox skill init --user`) and run `/toolbox-init` in your harness instead — it
 detects the stack, asks for the non-obvious rules, then does the same install. See
 first, install nothing? `ai-toolbox recommend` (or `ai-toolbox status` for what's
 already there).
@@ -115,21 +121,25 @@ symlinks, and `AI_TOOLBOX` overrides it.
 | `ai-toolbox recommend` | Print the recommended set for this repo (read-only). |
 | `ai-toolbox status` | What's installed here (hooks · MCP servers · skills · knowledge files). |
 | `ai-toolbox list` | Everything the toolbox offers (hooks · presets · skills · rules). |
-| `ai-toolbox hooks [name...]` | Copy hook scripts + wire only their entries into `.claude/settings.json` (default: all). |
-| `ai-toolbox mcp <preset...>` | Merge MCP preset(s) into `.mcp.json`; prints required secrets; auto-drops `with-dotenv.sh` when a preset needs it. |
-| `ai-toolbox skill <name...> [--user]` | Copy skill(s) into `.claude/skills/` (or `~/.claude/skills/`). A group name like `cli` installs each child. |
+| `ai-toolbox hooks [name...]` | Copy hook scripts + wire their entries into Claude `.claude/settings.json` and/or Codex `.codex/config.toml` `[hooks]` (default: all). |
+| `ai-toolbox mcp <preset...>` | Merge MCP preset(s) into `.mcp.json` and/or convert them into `.codex/config.toml` `[mcp_servers.*]`; prints required secrets; auto-drops helper scripts a preset needs. |
+| `ai-toolbox skill <name...> [--user]` | Copy skill(s) into `.claude/skills/` and/or `.agents/skills/` (add `--user` for `~/.claude/skills/` · `~/.agents/skills/`). A group name like `cli` installs each child. |
 | `ai-toolbox rules <stack...>` | **Print** rule snippets to inline into `AGENTS.md` (nothing is written). |
 | `ai-toolbox with-dotenv` | Drop the `.env` loader into `.claude/mcp/`. |
-| `ai-toolbox base-charter` | Append the always-on charter to `~/.claude/CLAUDE.md` (once per machine). |
+| `ai-toolbox base-charter` | Append the always-on charter to each detected harness's global config — `~/.claude/CLAUDE.md` and/or `~/.codex/AGENTS.md` (once per machine). |
 | `ai-toolbox help` | The full list. |
 
-**Notes.** `--repo <path>` targets another repo (default: current dir). Every
-command is idempotent — hooks dedupe, MCP servers overwrite by name, `base-charter`
-is marker-guarded. JSON merges need `jq` **or** `python3` on `PATH`. It writes only
-the target repo's `.claude/` and `.mcp.json` (and `~/.claude/CLAUDE.md` for
-`base-charter`); it never writes a real secret. What it *can't* do for you: export
-MCP secrets, complete OAuth (`/mcp`), restart Claude Code — it prints those
-follow-ups after an install.
+**Notes.** `--repo <path>` targets another repo (default: current dir).
+`--harness claude|codex|both` picks which harness(es) to write for; by default it
+**auto-detects** which homes exist (`~/.claude`, `~/.codex`, or repo-local
+`.claude`/`.codex`) and installs for those, falling back to Claude when neither is
+present. Every command is idempotent — hooks dedupe, MCP servers overwrite by name,
+`base-charter` is marker-guarded. Merges need `python3` on `PATH` (`tomllib`, 3.11+,
+for Codex TOML; the Codex serializer lives in `bin/lib/`). It writes only the target
+repo's `.claude/` + `.mcp.json` and/or `.codex/` + `.agents/skills/` (and the global
+charter file for `base-charter`); it never writes a real secret. What it *can't* do
+for you: export MCP secrets, complete OAuth (`/mcp` / `codex mcp login`), restart the
+harness — it prints those follow-ups after an install.
 
 ## Knowledge files: AGENTS.md · CLAUDE.md · RULES.md
 
@@ -146,7 +156,8 @@ Three files with non-overlapping roles:
 The **base charter** (`starters/base-charter.md`) is the one always-on artifact. It
 goes in each harness's *global* config (`~/.claude/CLAUDE.md` import,
 `~/.codex/AGENTS.md`, OpenCode global), on every machine you clone this onto —
-`ai-toolbox base-charter` does it.
+`ai-toolbox base-charter` appends it to each harness home it detects (the charter is
+harness-neutral prose, so the same text serves all of them).
 
 ## Templates
 
@@ -225,16 +236,25 @@ Each becomes a `/slash-command` and is auto-selected by its `description`.
 | `babysit-pr` | shepherd a PR to green, triaging each item |
 | `cli/*` | CLI-wrapper skills — `fly`, `gh`, `supabase`, `eas`, `aws` |
 
-Install with `ai-toolbox skill <name…>` (add `--user` to put them in
-`~/.claude/skills/` so `/<name>` works in every repo; a group name like `cli`
-installs each child). **Codex** reads the same `SKILL.md` from `~/.codex/skills/` —
-symlink to use a skill in both harnesses (Claude-only frontmatter is ignored).
+`SKILL.md` (`name` + `description` frontmatter) is a **cross-agent standard** — the
+same folder works in Claude Code and Codex unmodified. Install with `ai-toolbox skill
+<name…>`; it copies the folder into every detected harness's skills dir: Claude Code
+reads `.claude/skills/` (or `~/.claude/skills/` with `--user`), Codex reads
+`.agents/skills/` (or `~/.agents/skills/` with `--user`). A group name like `cli`
+installs each child. Codex can add an optional `agents/openai.yaml` inside a skill
+folder for its own UI metadata; the toolbox skills don't need one, and any
+Claude-only frontmatter is simply ignored by Codex.
 
 ## Hooks
 
 Where the toolkit stops being advisory: your `AGENTS.md` *tells* the model the
-rules; a hook *enforces* them — deterministically, every time. These are **Claude
-Code** hooks (configured in `settings.json`); the shell logic is reusable.
+rules; a hook *enforces* them — deterministically, every time. **Both harnesses run
+these:** the scripts read the tool call from stdin JSON (`tool_name` / `tool_input`),
+block with **exit code 2** + a stderr reason, and inject context via
+`hookSpecificOutput.additionalContext` — a contract Claude Code and Codex share. The
+same script is copied to `.claude/hooks/` (wired into `settings.json`) **and**
+`.codex/hooks/` (wired into `.codex/config.toml` `[hooks]`); the shell logic is one
+source.
 
 | Script | Event | Does |
 |---|---|---|
@@ -244,11 +264,16 @@ Code** hooks (configured in `settings.json`); the shell logic is reusable.
 | `conventional-commit.sh` | PreToolUse (Bash) | enforces Conventional Commits on `git commit -m`. |
 | `session-context.sh` | SessionStart | injects branch / uncommitted count / last commit so a session starts oriented. |
 
-Blocking hooks use **exit code 2** (stderr is fed back to the model as the reason);
-context hooks emit `hookSpecificOutput.additionalContext` on stdout. Install with
-`ai-toolbox hooks` (copies the scripts + `_lib.sh` and wires only their entries into
-`.claude/settings.json`; needs `jq` or `python3`). Run `/hooks` in Claude Code to
-confirm they're registered.
+Install with `ai-toolbox hooks` (copies the scripts + `_lib.sh` and wires only their
+entries; needs `jq` or `python3`). Confirm with `/hooks` in Claude Code, or by
+reviewing + trusting the hook the first time you run `codex`. **One honest Codex
+caveat:** Codex names its shell tool `Bash` (so `guard-irreversible` +
+`conventional-commit` fire) and `SessionStart` fires, but edits go through
+`apply_patch`, whose hooks are still maturing upstream ([codex#16732]) — so the
+`Write|Edit` hooks (`format-on-edit`, `protect-generated`) are wired with the correct
+matcher but won't reliably fire on Codex until that lands. They work fully on Claude Code.
+
+[codex#16732]: https://github.com/openai/codex/issues/16732
 
 **Tune them** — the patterns are starters: `guard-irreversible.sh`'s release-tag
 block is opt-in (drop it where it doesn't apply); `protect-generated.sh` reads
@@ -278,7 +303,12 @@ The through-line: prefer the MCP that lets you *verify the real thing*
 (chrome-devtools / mobile / unity), *pull source-of-truth context* (figma /
 clickup), or *act as the user* (claude-in-chrome). A project's `AGENTS.md` should
 name which to use. Config lives per harness: Claude Code project `.mcp.json` or
-global `~/.claude.json`; Codex `~/.codex/config.toml`; OpenCode its own file.
+global `~/.claude.json`; Codex `.codex/config.toml` (or `~/.codex/config.toml`);
+OpenCode its own file. `ai-toolbox mcp` keeps the presets as the single source and
+**converts** them to each format: for Codex it emits `[mcp_servers.<name>]` tables,
+mapping a `${VAR}` env secret to `env_vars = ["VAR"]` (host-env passthrough), a
+`${VAR}` in args to a `with-dotenv.sh` wrap that expands it at launch, and a remote
+`headersHelper` to `bearer_token_env_var` (with a printed caveat — see below).
 
 **Two rules the research made clear.** (1) **Adopt, don't rebuild** — if a service
 ships an official MCP, use it; only *build* one when no CLI exists and the API is
@@ -337,6 +367,15 @@ lives only in `.env` needs a bridge, and it differs by transport:
   recent Claude Code (`headersHelper`, ≥ v2.1.193); it runs arbitrary shell, so it
   executes only after you accept the workspace-trust prompt.
 
+**On Codex the `.env` bridge differs.** `with-dotenv.sh` works identically — Codex
+runs the same wrapper, and `ai-toolbox mcp` rewrites the path to `.codex/mcp/` and even
+routes a bare `${VAR}`-in-args server through it (Codex doesn't interpolate config
+strings, so the wrapper expands them at launch). But Codex has **no `headersHelper`**:
+a remote server's token maps to `bearer_token_env_var`, which reads the token from the
+environment you launch `codex` from — so for a remote MCP on Codex, **export the token**
+(it won't be read from the repo `.env`). A `${VAR}` stdio env secret maps to
+`env_vars = ["VAR"]`, the same host-env passthrough Claude Code's `${VAR}` already relies on.
+
 **Multiple environments.** Add one server entry per env (they differ only by
 `--project-ref`; refs aren't secret). A Supabase PAT is account-level, so the same
 `SUPABASE_ACCESS_TOKEN` usually works for every project — see
@@ -353,7 +392,7 @@ job here is to point you at it and encode the one rule that keeps it safe.
 | `/loop [interval] [prompt]` | re-runs a prompt on an interval in-session (7-day auto-expiry). Can call skills: `/loop 20m /babysit-pr 1234`. Bare `/loop` runs a maintenance prompt (customize via `.claude/loop.md`). | poll CI, tend a PR, periodic checks while the terminal is open |
 | `/goal <condition>` | keeps working turn-after-turn until a condition holds. **Always cap it:** "… stop after N turns". | "all tests pass and lint clean" |
 | Background Bash (Ctrl-B) | move dev servers / builds / watchers off the main thread; completion lands as a notification | long-running processes, no polling |
-| GitHub Action (`anthropics/claude-code-action@v1`) | the battle-tested unattended agent — PR review, `@claude` mentions, scheduled reports, CI autofix | true unattended, runs in CI not your laptop |
+| GitHub Action (`anthropics/claude-code-action@v1` · `openai/codex-action@v1`) | the battle-tested unattended agent — PR review, `@claude` / `@codex` mentions, scheduled reports, CI autofix | true unattended, runs in CI not your laptop |
 | Routines (managed cloud cron) | scheduled agents that run with your laptop closed (min 1h). Research preview — a green run ≠ success. | nightly triage, dependency bumps, docs-drift PRs |
 
 **The one rule: bound the loop.** Every reliable setup engineers against the
@@ -361,11 +400,13 @@ runaway-agent failure mode — turn caps (`/goal … stop after N`), `/loop`'s 7
 expiry, `--max-turns` in CI, and **sandboxing for any
 `--dangerously-skip-permissions` run.** Never wire an unbounded auto-fix loop.
 
-What's here: `background/claude-github-action.yml` (a drop-in capped workflow — `cp`
-it to `<repo>/.github/workflows/claude.yml`, add an `ANTHROPIC_API_KEY` secret),
-`background/loop.md.template` (customize what a bare `/loop` does per repo), and the
-**`babysit-pr`** skill — a *triaging* PR watcher that assesses each item as
-fix/dismiss/escalate rather than blindly auto-applying.
+What's here: two drop-in capped workflows — `background/claude-github-action.yml`
+(`cp` to `<repo>/.github/workflows/claude.yml`, add an `ANTHROPIC_API_KEY` secret) and
+`background/codex-github-action.yml` (`openai/codex-action@v1`, bounded by a read-only
+sandbox + `drop-sudo`; add an `OPENAI_API_KEY` secret) — install whichever matches your
+harness, or both; `background/loop.md.template` (customize what a bare `/loop` does per
+repo); and the **`babysit-pr`** skill — a *triaging* PR watcher that assesses each item
+as fix/dismiss/escalate rather than blindly auto-applying.
 
 ## Examples
 

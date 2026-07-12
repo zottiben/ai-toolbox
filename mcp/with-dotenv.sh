@@ -3,6 +3,12 @@
 # Lets MCP servers (and any CLI) read secrets from a root .env WITHOUT you having
 # to `source` it in your shell first, and supports multiple environments.
 #
+# Cross-harness: Claude Code expands ${VAR} in .mcp.json before launch, so the args
+# arrive already-resolved. Codex does NOT interpolate config strings — so after
+# loading .env this script also expands any ${VAR} left in the trailing args (a
+# no-op for Claude, since nothing remains). That makes it the one bridge that lets
+# a ${VAR}-in-args server work under both harnesses. Codex path: .codex/mcp/with-dotenv.sh.
+#
 # In .mcp.json (copy this script to <repo>/.claude/mcp/with-dotenv.sh):
 #   "command": ".claude/mcp/with-dotenv.sh",
 #   "args": ["--", "npx", "-y", "@supabase/mcp-server-supabase@latest", "--read-only", "--project-ref=<ref>"]
@@ -52,6 +58,31 @@ if [ "${#NEEDS[@]}" -gt 0 ]; then
       exit 1
     fi
   done
+fi
+
+# Expand ${VAR} references left in the args, using the now-loaded environment. Claude
+# Code already resolved these before launch (so this is a no-op there); Codex passes
+# config strings through verbatim, so this is what makes ${VAR}-in-args work under Codex.
+expand_vars() {
+  local s=$1 out= name val
+  while [[ $s == *'${'*'}'* ]]; do
+    out+=${s%%'${'*}          # text before the first ${
+    s=${s#*'${'}              # drop up to and including the first ${
+    name=${s%%'}'*}           # var name, up to the first }
+    s=${s#*'}'}               # remainder after the first }
+    if [[ $name =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      val=${!name-}; out+=$val
+    else
+      out+='${'"$name"'}'     # not a valid var name — leave it literal
+    fi
+  done
+  out+=$s
+  printf '%s' "$out"
+}
+if [ "$#" -gt 0 ]; then
+  args=()
+  for a in "$@"; do args+=("$(expand_vars "$a")"); done
+  set -- "${args[@]}"
 fi
 
 exec "$@"

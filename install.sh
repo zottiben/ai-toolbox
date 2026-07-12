@@ -50,8 +50,8 @@ fi
 cat <<'EOF'
 
 Done. Next:
-  ai-toolbox base-charter          # once per machine: always-on charter -> ~/.claude/CLAUDE.md
-  cd <your repo> && ai-toolbox init   # scaffold AGENTS.md + install the tailored tooling
+  ai-toolbox base-charter          # once per machine: always-on charter -> ~/.claude/CLAUDE.md and/or ~/.codex/AGENTS.md
+  cd <your repo> && ai-toolbox init   # scaffold AGENTS.md + install the tailored tooling (auto-detects Claude Code / Codex)
 
 Run `ai-toolbox help` for everything.
 EOF

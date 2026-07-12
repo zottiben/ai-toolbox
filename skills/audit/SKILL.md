@@ -18,9 +18,9 @@ footprint tally. This is the guard that ai-toolbox never turns into Software Tea
 3. **Process creep.** Any skill drifting from recipe → program: mandatory
    multi-step orchestration, approval gates, spawn/handoff doctrine, "delegate
    instead of doing it yourself."
-4. **Native duplication.** Any skill/agent reimplementing native `/code-review`,
-   `/security-review`, `/verify`, `/run`, `/init`, `/simplify`. Cut or redirect to
-   the native tool.
+4. **Native duplication.** Any skill/agent reimplementing a tool the harness already
+   ships (Claude Code: `/code-review`, `/security-review`, `/verify`, `/run`, `/init`,
+   `/simplify`; Codex: `/review`, `/init`). Cut or redirect to the native tool.
 5. **Stale references.** Every path / file / skill name referenced actually exists.
 6. **Law check.** Re-read the 7 laws in `README.md`; flag anything that violates one.
 

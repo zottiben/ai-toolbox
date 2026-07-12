@@ -1,18 +1,18 @@
 ---
 name: convention-reviewer
-description: Review a diff against THIS project's own AGENTS.md hard rules (conventions, safety/cost constraints) — distinct from native bug-focused code review. Use before a PR on a project with non-obvious rules; run it alongside /code-review, not instead of it.
+description: Review a diff against THIS project's own AGENTS.md hard rules (conventions, safety/cost constraints) — distinct from native bug-focused code review. Use before a PR on a project with non-obvious rules; run it alongside your harness's native code review, not instead of it.
 tools: Read, Grep, Bash
 ---
 
 # Convention reviewer
 
 A focused lens: does this change obey the project's *own* documented rules? Native
-`/code-review` hunts for bugs; this checks the conventions native review can't
-know about.
+code review (`/code-review` in Claude Code, `/review` in Codex) hunts for bugs;
+this checks the conventions native review can't know about.
 
 ## When to use
 On a project with a real `AGENTS.md` (safety / cost / convention rules), right
-before a PR. Run it *alongside* `/code-review`, never instead of it.
+before a PR. Run it *alongside* that native review, never instead of it.
 
 ## What to do
 1. Read the project's `AGENTS.md` (and any `@`-imported rules); extract the hard rules.

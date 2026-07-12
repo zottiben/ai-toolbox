@@ -5,11 +5,16 @@ set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"; . "$DIR/_lib.sh"
 HOOK_JSON=$(cat)
 
+# Claude Code reports the edited path in tool_input.file_path. (Codex edits go through
+# apply_patch, whose payload has no file_path and whose hooks are still maturing upstream —
+# so this best-effort formatter simply no-ops there until that lands.)
 file=$(json_field tool_input file_path)
 [ -z "$file" ] && exit 0
 [ -f "$file" ] || exit 0
 
-cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null || true
+# Resolve the project root from the payload's cwd (Codex) or ${CLAUDE_PROJECT_DIR} (Claude).
+proj=$(json_field cwd); : "${proj:=${CLAUDE_PROJECT_DIR:-.}}"
+cd "$proj" 2>/dev/null || true
 have() { command -v "$1" >/dev/null 2>&1; }
 
 case "$file" in

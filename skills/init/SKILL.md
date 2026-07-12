@@ -104,10 +104,11 @@ CLI (this repo), so you just decide and confirm; never hand-copy files.
   `ai-toolbox mcp context7 supabase`, `ai-toolbox skill pre-pr capture`. Each is
   idempotent. (Or `ai-toolbox bootstrap` walks the same groups with a `[Y/n]` prompt.)
 - **Report the manual follow-ups the CLI can't do:** export the MCP secrets it
-  listed, restart Claude Code, run `/mcp` to connect/OAuth. For Unity, the unity
-  MCP self-configures (no preset).
+  listed, restart your harness, then connect/OAuth (Claude Code `/mcp`; Codex
+  `codex mcp login <server>`). For Unity, the unity MCP self-configures (no preset).
 - **Greenfield:** hooks + helper skills still apply; hold off on stack-specific
   MCPs until the stack actually lands.
 
 > Once per machine (not per repo): `ai-toolbox base-charter` appends the always-on
-> charter to `~/.claude/CLAUDE.md`. Skip if already done.
+> charter to each detected harness's global config (`~/.claude/CLAUDE.md` and/or
+> `~/.codex/AGENTS.md`). Skip if already done.

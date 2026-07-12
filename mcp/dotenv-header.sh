@@ -9,6 +9,10 @@
 # then, not at launch. (with-dotenv.sh solves the same problem for stdio servers, by
 # wrapping the process; an HTTP server has no local process to wrap.)
 #
+# Codex has no headersHelper. `ai-toolbox mcp` maps such a server to `bearer_token_env_var`
+# in .codex/config.toml, which reads the token from the environment you launch codex from —
+# so for Codex, export the token (it won't be read from the repo .env for a remote server).
+#
 # In .mcp.json (copy this to <repo>/.claude/mcp/dotenv-header.sh):
 #   "type": "http",
 #   "url": "https://api.example.com/mcp",

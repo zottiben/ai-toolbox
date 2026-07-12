@@ -29,12 +29,14 @@ tooling allows (e.g. `turbo run test --filter=<changed>`). On the first failure,
 **stop and report it with the actual output** — don't push past red.
 
 ## 4. Native review
-Run `/code-review` on the diff. If it touches auth, data, secrets, or payments,
-also `/security-review`. Fix the clear findings; flag the judgment calls.
+Run your harness's native review on the diff (`/code-review` in Claude Code,
+`/review` in Codex). If it touches auth, data, secrets, or payments, also run a
+security pass where available (`/security-review`). Fix the clear findings; flag
+the judgment calls.
 
 ## 5. Behaviour check (if user-facing)
-For UI/behaviour changes, suggest `/verify` or `/run` — tests passing isn't the
-same as the thing actually working.
+For UI/behaviour changes, actually exercise the change (e.g. Claude Code's
+`/verify` or `/run`) — tests passing isn't the same as the thing actually working.
 
 ## 6. Report — then stop
 Summarise as a checklist: each check ✅/❌ + the review findings. Then **hand
