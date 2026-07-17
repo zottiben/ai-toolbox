@@ -66,16 +66,22 @@ resolve_harnesses() {
   case "$HARNESS" in
     claude) HARNESSES=(claude) ;;
     codex)  HARNESSES=(codex) ;;
+    pi)     HARNESSES=(pi) ;;
     both)   HARNESSES=(claude codex) ;;
+    all)    HARNESSES=(claude codex pi) ;;
     "")
-      local has_codex=0 has_claude=0
+      local has_codex=0 has_claude=0 has_pi=0
       { [ -d "$HOME/.codex" ] || [ -d "$REPO/.codex" ]; } && has_codex=1
       { [ -d "$HOME/.claude" ] || [ -d "$REPO/.claude" ] || [ -f "$REPO/.mcp.json" ]; } && has_claude=1
-      if   [ "$has_codex" -eq 1 ] && [ "$has_claude" -eq 1 ]; then HARNESSES=(claude codex)
-      elif [ "$has_codex" -eq 1 ]; then HARNESSES=(codex)
-      else HARNESSES=(claude); fi
+      { [ -d "$HOME/.pi" ] || [ -d "$REPO/.pi" ]; } && has_pi=1
+      HARNESSES=()
+      [ "$has_claude" -eq 1 ] && HARNESSES+=(claude)
+      [ "$has_codex" -eq 1 ] && HARNESSES+=(codex)
+      [ "$has_pi" -eq 1 ] && HARNESSES+=(pi)
+      # When no harness has been initialized, preserve the original Claude-first default.
+      [ "${#HARNESSES[@]}" -gt 0 ] || HARNESSES=(claude)
       ;;
-    *) die "unknown --harness: $HARNESS (use claude|codex|both)" ;;
+    *) die "unknown --harness: $HARNESS (use claude|codex|pi|both|all)" ;;
   esac
 }
 
@@ -99,6 +105,7 @@ cmd_hooks() {
     case "$h" in
       claude) _hooks_claude "${names[@]}" ;;
       codex)  _hooks_codex  "${names[@]}" ;;
+      pi)     info "pi: shell hooks aren't wired for pi yet (pi uses TypeScript extensions) - skipped." ;;
     esac
   done
 }
@@ -206,6 +213,7 @@ cmd_mcp() {
     case "$h" in
       claude) _mcp_claude "${presets[@]}" ;;
       codex)  _mcp_codex  "${presets[@]}" ;;
+      pi)     _mcp_pi     "${presets[@]}" ;;
     esac
   done
   _mcp_report_secrets "${presets[@]}"
@@ -256,6 +264,41 @@ _mcp_codex() {
   if [ -n "$w" ]; then printf '%s\n' "$w" | while IFS= read -r line; do warn "$line"; done; fi
 }
 
+# Pi: convert presets to the pi-mcp-extension shape (bin/lib/mcp_pi.py) merged into
+# .pi/mcp.json, then copy any helper scripts the converted config references. Pi's MCP
+# client is the pi-mcp-extension package; secrets flow through .pi/mcp/with-dotenv.sh
+# (pi does not interpolate config), and remote servers use OAuth via auth:{type:oauth}.
+_mcp_pi() {
+  local tgt="$REPO/.pi/mcp.json"
+  mkdir -p "$REPO/.pi"
+  local w; w=$(python3 "$CODEX_LIB/mcp_pi.py" "$tgt" "$@")
+  for p in "$@"; do ok "mcp   $(basename "${p%.json}")  ->  .pi/mcp.json"; done
+  _mcp_copy_helpers "$REPO/.pi/mcp" ".pi/mcp/" "$tgt"
+  if [ -n "$w" ]; then printf '%s\n' "$w" | while IFS= read -r line; do warn "$line"; done; fi
+}
+
+# Pi MCP is an optional package, not part of Pi core. Both the initializer and the
+# per-repo MCP follow-up use this strict check: it must be configured AND installed.
+_pi_mcp_extension_ready() {
+  [ -d "$HOME/.pi/agent/npm/node_modules/pi-mcp-extension" ] \
+    && grep -q 'pi-mcp-extension' "$HOME/.pi/agent/settings.json" 2>/dev/null
+}
+
+# pi-init - one-time, global Pi MCP setup. Per-repo servers still belong in .pi/mcp.json
+# and are added with `ai-toolbox mcp <preset> --harness pi`.
+cmd_pi_init() {
+  have pi || die "pi is not on PATH. Install it first: npm install -g --ignore-scripts @earendil-works/pi-coding-agent"
+  if _pi_mcp_extension_ready; then
+    ok "Pi MCP extension already installed globally (nothing to do)"
+  else
+    info "Installing pi-mcp-extension globally (reviewed package: npm:pi-mcp-extension)..."
+    pi install npm:pi-mcp-extension
+    _pi_mcp_extension_ready || die "pi install completed but pi-mcp-extension was not registered. Run 'pi install npm:pi-mcp-extension' and inspect ~/.pi/agent/settings.json."
+    ok "Pi MCP extension installed globally"
+  fi
+  info "Next: in a repo, run 'ai-toolbox mcp <preset...> --harness pi'; restart pi, then /mcp."
+}
+
 # harness-aware follow-ups: which secrets to set, and how to connect
 _mcp_report_secrets() {
   # ${VAR} placeholders resolve from the process env (skip always-set shell basics)
@@ -279,6 +322,13 @@ _mcp_report_secrets() {
     case "$h" in
       claude) info "Claude Code: restart in this repo, then /mcp to connect (and complete any OAuth)." ;;
       codex)  info "Codex: run 'codex mcp login <server>' for OAuth servers; restart codex to load .codex/config.toml." ;;
+      pi)
+        if _pi_mcp_extension_ready; then
+          info "Pi: restart pi in this repo, then /mcp to connect (OAuth servers open a browser login on first connect; tokens are cached)."
+        else
+          warn "Pi: run 'ai-toolbox pi-init' once to enable MCP, then restart pi and /mcp to connect."
+        fi
+        ;;
     esac
   done
 }
@@ -299,12 +349,15 @@ cmd_skill() {
     [ -d "$TOOLBOX_ROOT/skills/$n" ] || die "no such skill: $n (see 'ai-toolbox list')"
   done
   resolve_harnesses
-  local h dest
+  # Codex and pi share .agents/skills - dedupe so a combined target installs once.
+  local h dest seen=""
   for h in "${HARNESSES[@]}"; do
     case "$h" in
-      claude) [ "$user" -eq 1 ] && dest="$HOME/.claude/skills" || dest="$REPO/.claude/skills" ;;
-      codex)  [ "$user" -eq 1 ] && dest="$HOME/.agents/skills" || dest="$REPO/.agents/skills" ;;
+      claude)   [ "$user" -eq 1 ] && dest="$HOME/.claude/skills" || dest="$REPO/.claude/skills" ;;
+      codex|pi) [ "$user" -eq 1 ] && dest="$HOME/.agents/skills" || dest="$REPO/.agents/skills" ;;
     esac
+    case ":$seen:" in *":$dest:"*) continue ;; esac
+    seen="$seen:$dest"
     _skill_install "$dest" "${names[@]}"
   done
 }
@@ -352,7 +405,7 @@ cmd_with_dotenv() {
   resolve_harnesses
   local h d
   for h in "${HARNESSES[@]}"; do
-    case "$h" in claude) d="$REPO/.claude/mcp" ;; codex) d="$REPO/.codex/mcp" ;; esac
+    case "$h" in claude) d="$REPO/.claude/mcp" ;; codex) d="$REPO/.codex/mcp" ;; pi) d="$REPO/.pi/mcp" ;; esac
     mkdir -p "$d"
     cp "$TOOLBOX_ROOT/mcp/with-dotenv.sh" "$d/" && chmod +x "$d/with-dotenv.sh"
     ok "mcp   with-dotenv.sh  ->  ${d#$REPO/}/"
@@ -372,6 +425,7 @@ cmd_base_charter() {
     case "$h" in
       claude) _charter_append "$HOME/.claude/CLAUDE.md" ;;
       codex)  _charter_append "$HOME/.codex/AGENTS.md" ;;
+      pi)     info "pi: no global charter file - put shared rules in the project AGENTS.md (pi reads it)." ;;
     esac
   done
   info "This is the one always-on artifact — do this once per machine, not per repo."
@@ -524,6 +578,12 @@ cmd_status() {
   if [ -d "$REPO/.agents/skills" ]; then _st_line skills; ( cd "$REPO/.agents/skills" && ls -d */ 2>/dev/null | tr -d '/' | tr '\n' ' '; echo )
   else _st_line skills; _st_none; fi
 
+  printf '%sPi%s\n' "$_bld" "$_rst"
+  if [ -f "$REPO/.pi/mcp.json" ] && have python3; then _st_line mcp; python3 -c 'import json,sys;print(" ".join(json.load(open(sys.argv[1])).get("mcpServers",{})) or "(none)")' "$REPO/.pi/mcp.json"
+  else _st_line mcp; _st_none; fi
+  if [ -d "$REPO/.agents/skills" ]; then _st_line skills; ( cd "$REPO/.agents/skills" && ls -d */ 2>/dev/null | tr -d '/' | tr '\n' ' '; echo )
+  else _st_line skills; _st_none; fi
+
   printf '%sKnowledge%s\n' "$_bld" "$_rst"
   _st_line files; { [ -f "$REPO/AGENTS.md" ] && printf 'AGENTS.md '; [ -f "$REPO/CLAUDE.md" ] && printf 'CLAUDE.md'; [ -f "$REPO/AGENTS.md" ] || [ -f "$REPO/CLAUDE.md" ] || printf '%s(none)%s' "$_dim" "$_rst"; echo; }
   info "'ai-toolbox recommend' suggests what to add for this stack; 'ai-toolbox list' shows everything."
@@ -541,16 +601,19 @@ ${_bld}ai-toolbox${_rst} — set up ai-toolbox pieces in a repo (ai-toolbox root
   ${_bld}ai-toolbox list${_rst}                           everything the ai-toolbox offers
 
   ${_bld}ai-toolbox hooks${_rst} [name...]                copy hooks + wire settings.json / .codex config.toml (default: all)
-  ${_bld}ai-toolbox mcp${_rst} <preset...>                merge MCP preset(s) into .mcp.json / .codex/config.toml
+  ${_bld}ai-toolbox pi-init${_rst}                         install pi-mcp-extension globally (one-time Pi MCP setup)
+  ${_bld}ai-toolbox mcp${_rst} <preset...>                merge MCP preset(s) into .mcp.json / .codex/config.toml / .pi/mcp.json
   ${_bld}ai-toolbox skill${_rst} <name...> [--user]       copy skill(s) into .claude/skills / .agents/skills
   ${_bld}ai-toolbox rules${_rst} <stack...>               print rule snippets to inline into AGENTS.md
   ${_bld}ai-toolbox with-dotenv${_rst}                    drop the .env loader for MCP secrets
   ${_bld}ai-toolbox base-charter${_rst}                   append the always-on charter to the harness global config (per machine)
 
 Global: ${_bld}--repo <path>${_rst} targets another repo (default: current directory).
-        ${_bld}--harness claude|codex|both${_rst} picks the target harness(es); default auto-detects
-        which homes exist (~/.claude, ~/.codex) and writes for those. Claude Code reads .claude/ +
-        .mcp.json; Codex reads .codex/config.toml + .agents/skills + ~/.codex/AGENTS.md.
+        ${_bld}--harness claude|codex|pi|both|all${_rst} picks the target harness(es); default auto-detects
+        initialized homes (~/.claude, ~/.codex, ~/.pi) and writes for those. Claude Code reads .claude/ +
+        .mcp.json; Codex reads .codex/config.toml + .agents/skills; pi reads .pi/mcp.json (via the
+        pi-mcp-extension package) + .agents/skills. base-charter global: ~/.claude/CLAUDE.md,
+        ~/.codex/AGENTS.md.
 Set ${_bld}AI_TOOLBOX${_rst} to override the ai-toolbox location. Idempotent — safe to re-run.
 EOF
 }
@@ -563,6 +626,7 @@ case "$cmd" in
   skill|skills)  cmd_skill "$@" ;;
   rules|rule)    cmd_rules "$@" ;;
   with-dotenv)   cmd_with_dotenv "$@" ;;
+  pi-init)       cmd_pi_init "$@" ;;
   base-charter)  cmd_base_charter "$@" ;;
   recommend|reco) cmd_recommend "$@" ;;
   init)          cmd_init "$@" ;;

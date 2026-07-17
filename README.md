@@ -1,10 +1,11 @@
 # ai-toolbox
 
 A portable, harness-agnostic toolkit that **complements** AI coding harnesses
-(Claude Code, Codex, OpenCode) instead of wrapping them in process. One source of
+(Claude Code, Codex, Pi, OpenCode) instead of wrapping them in process. One source of
 truth, installed natively for each: the CLI writes Claude Code's `.claude/` +
-`.mcp.json` **and** Codex's `.codex/config.toml` + `.agents/skills/` from the same
-hook scripts, skill folders, and MCP presets — never authored twice.
+`.mcp.json`, Codex's `.codex/config.toml` + `.agents/skills/`, **and** Pi's
+`.pi/mcp.json` from the same hook scripts, skill folders, and MCP presets - never
+authored twice.
 
 It's a **personal leverage tool.** Its only job is to make *you* faster and keep
 *you* in control — encode durable knowledge once, scaffold it into any project in
@@ -71,10 +72,13 @@ you — no more hand-copying files or merging JSON. Nothing here is all-or-nothi
 git clone <this repo> ~/Developer/ai-toolbox && cd ~/Developer/ai-toolbox
 ./install.sh                 # puts `ai-toolbox` on your PATH (no manual PATH edits)
 ai-toolbox base-charter      # appends the always-on charter to each harness global config
+ai-toolbox pi-init           # optional, once: install Pi's MCP client extension globally
 ```
 `base-charter` auto-detects which harness homes exist and writes to those:
 `~/.claude/CLAUDE.md` (Claude Code) and/or `~/.codex/AGENTS.md` (Codex). Every
-per-repo command does the same detection; `--harness claude|codex|both` overrides it.
+per-repo command does the same detection, including Pi when `~/.pi` or `./.pi`
+exists; `--harness claude|codex|pi|both|all` overrides it. `ai-toolbox mcp` writes
+`.pi/mcp.json` alongside the other selected harness configurations.
 
 **Per repo — the smart path (recommended).** From inside the target repo:
 ```bash
@@ -305,12 +309,17 @@ The through-line: prefer the MCP that lets you *verify the real thing*
 (chrome-devtools / mobile / unity), *pull source-of-truth context* (figma /
 clickup), or *act as the user* (claude-in-chrome). A project's `AGENTS.md` should
 name which to use. Config lives per harness: Claude Code project `.mcp.json` or
-global `~/.claude.json`; Codex `.codex/config.toml` (or `~/.codex/config.toml`);
-OpenCode its own file. `ai-toolbox mcp` keeps the presets as the single source and
-**converts** them to each format: for Codex it emits `[mcp_servers.<name>]` tables,
-mapping a `${VAR}` env secret to `env_vars = ["VAR"]` (host-env passthrough), a
-`${VAR}` in args to a `with-dotenv.sh` wrap that expands it at launch, and a remote
-`headersHelper` to `bearer_token_env_var` (with a printed caveat — see below).
+global `~/.claude.json`; Codex `.codex/config.toml` (or `~/.codex/config.toml`); **Pi**
+`.pi/mcp.json` (project) or `~/.pi/agent/mcp.json` (global), read by the
+`pi-mcp-extension` package; OpenCode its own file. `ai-toolbox mcp` keeps the presets
+as the single source and **converts** them to each format: for Codex it emits
+`[mcp_servers.<name>]` tables, mapping a `${VAR}` env secret to `env_vars = ["VAR"]`
+(host-env passthrough), a `${VAR}` in args to a `with-dotenv.sh` wrap that expands it
+at launch, and a remote `headersHelper` to `bearer_token_env_var` (with a printed
+caveat - see below). For Pi it emits pi-mcp `mcpServers` with explicit
+`transport`/`lifecycle`, routes any `${VAR}` (in args **or** env) through the same
+`with-dotenv.sh` wrap (Pi does not interpolate config either), and maps remote OAuth
+servers to `auth: {"type": "oauth"}` (see below).
 
 **Two rules the research made clear.** (1) **Adopt, don't rebuild** — if a service
 ships an official MCP, use it; only *build* one when no CLI exists and the API is
@@ -329,10 +338,12 @@ you to `/mcp`:
 | `chrome-devtools` | official Google | none | CWV / Lighthouse / network / perf | profiling, not e2e |
 | `playwright` | official Microsoft | none | a11y-tree e2e automation ("does it work") | pairs with chrome-devtools |
 | `mobile` | `mobile-next/mobile-mcp` (`@mobilenext/mobile-mcp`) | none | drive an Android emulator **or** iOS simulator (also real devices) — screenshot, tap, type, swipe, inspect UI; the mobile "see it actually work" | Node ≥ 22; Android needs Platform Tools + SDK, iOS needs Xcode (macOS); telemetry disabled in preset |
-| `figma-framelink` | `GLips/Figma-Context-MCP` | `FIGMA_API_KEY` | pull design context on any Figma plan | official Dev-Mode MCP is better *with* a paid seat |
+| `clickup` | official ClickUp (remote) | OAuth via `/mcp` | pull ticket/task context, update status | install only where ClickUp is the planning source of truth |
+| `figma` | official Figma (remote) | OAuth via `/mcp` | pull design context; create/edit Figma content on supported plans | Starter/View seats get 6 read tool calls/month; higher seats use API-style rate limits |
+| `figma-framelink` | `GLips/Figma-Context-MCP` (stdio) | `FIGMA_API_KEY` | API-key fallback for design context | distinct server name, so it can coexist with official `figma` |
 | `expo` | official Expo (remote) | OAuth via `/mcp` | EAS build triage, TestFlight crash/review, RN DevTools | covers much of an "App Store Connect" need |
 | `sentry` | official Sentry (remote) | OAuth via `/mcp` | crash RCA (Seer) in-editor | stdio alt: `npx @sentry/mcp-server` |
-| `pixellab` | official PixelLab (remote) | `PIXELLAB_API_TOKEN` (in repo `.env`) | generate pixel-art characters, animations, tilesets (4/8-dir sprites, isometric, terrain) — game-art asset gen | reads the token from `.env` at connect time via `headersHelper` (needs recent Claude Code, ≥ v2.1.193); token at pixellab.ai → sign in; game/pixel-art only |
+| `pixellab` | official PixelLab (remote) | `PIXELLAB_API_TOKEN` (in repo `.env`) | generate pixel-art characters, animations, tilesets (4/8-dir sprites, isometric, terrain) - game-art asset gen | Claude uses `headersHelper`; Pi uses an `mcp-remote` stdio bridge; Codex requires an exported token; game/pixel-art only |
 | `unity` | `CoplayDev/unity-mcp` | none | drive the Unity Editor — scenes, GameObjects, play-mode, run tests, edit scripts; the game "see it actually work" | needs `uv` + the MCP-for-Unity package; `--directory` defaults to the **macOS** server path (see note) |
 
 > **Unity setup.** The `unity` preset needs the MCP-for-Unity package in your project
@@ -345,9 +356,9 @@ you to `/mcp`:
 
 **Adopt these too:** **Postgres MCP Pro** (`crystaldba/postgres-mcp`, needs
 `DATABASE_URI` — avoid the archived `server-postgres`, unpatched SQLi), **GitHub**
-(official — scope its toolsets, or just use `gh` + `skills/cli/gh`), **ClickUp** /
-**Resend** (only for real task/broadcast management). Package names/flags evolve —
-verify against each server's upstream README before trusting a preset.
+(official — scope its toolsets, or just use `gh` + `skills/cli/gh`), and **Resend**
+(only for real broadcast management). Package names/flags evolve — verify against each
+server's upstream README before trusting a preset.
 
 **Secrets from a root `.env`.** `${VARS}` in a config resolve from the environment
 Claude Code was *launched* with — it does **not** auto-load a repo `.env`, and an
@@ -369,14 +380,36 @@ lives only in `.env` needs a bridge, and it differs by transport:
   recent Claude Code (`headersHelper`, ≥ v2.1.193); it runs arbitrary shell, so it
   executes only after you accept the workspace-trust prompt.
 
-**On Codex the `.env` bridge differs.** `with-dotenv.sh` works identically — Codex
+**On Codex the `.env` bridge differs.** `with-dotenv.sh` works identically - Codex
 runs the same wrapper, and `ai-toolbox mcp` rewrites the path to `.codex/mcp/` and even
 routes a bare `${VAR}`-in-args server through it (Codex doesn't interpolate config
 strings, so the wrapper expands them at launch). But Codex has **no `headersHelper`**:
 a remote server's token maps to `bearer_token_env_var`, which reads the token from the
-environment you launch `codex` from — so for a remote MCP on Codex, **export the token**
+environment you launch `codex` from - so for a remote MCP on Codex, **export the token**
 (it won't be read from the repo `.env`). A `${VAR}` stdio env secret maps to
 `env_vars = ["VAR"]`, the same host-env passthrough Claude Code's `${VAR}` already relies on.
+
+**On Pi the MCP client is a package.** Pi's core is minimal; MCP comes from the
+`pi-mcp-extension` package. Run `ai-toolbox pi-init` once per machine (it runs
+`pi install npm:pi-mcp-extension` globally and is idempotent) - this is "initialise a
+Pi instance with MCP capabilities". After that, `ai-toolbox mcp <preset...>` writes
+`.pi/mcp.json` for the repo and you're done - restart pi and `/mcp` to check status.
+Pi's config is WYSIWYG (**no `${VAR}` interpolation**), so every secret-bearing stdio
+server is routed through `.pi/mcp/with-dotenv.sh` exactly like Codex: it loads the repo
+`.env` and expands `${VAR}` in the args at launch, so tokens like `FIGMA_API_KEY` /
+`SUPABASE_ACCESS_TOKEN` stay in `.env` (no export needed). **OAuth is clean on Pi:** a
+remote OAuth server (the `clickup`, `figma`, `expo`, and `sentry` presets today, or
+any remote MCP you add later) is emitted as `transport: "streamable-http"` +
+`auth: {"type": "oauth"}`, and the extension runs the
+full OAuth2 + PKCE flow in the browser on first connect, caching the token to disk so
+it survives restarts - no `codex mcp login` equivalent to run. Servers default to
+`lifecycle: "eager"` (tools ready at session start; flip to `"lazy"` in `.pi/mcp.json`
+for manual `/mcp:start`). Pi has no `headersHelper`, so the `pixellab` preset instead
+uses `.pi/mcp/with-dotenv.sh` to load `PIXELLAB_API_TOKEN`, then starts
+`mcp-remote@latest` as a stdio-to-HTTP bridge with its documented `--header` option.
+The token is expanded only in the child process, never written to config; `npx` fetches
+the bridge on first use. This makes PixelLab push-button on Pi too, while retaining its
+repo `.env` workflow.
 
 **Multiple environments.** Add one server entry per env (they differ only by
 `--project-ref`; refs aren't secret). A Supabase PAT is account-level, so the same
