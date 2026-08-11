@@ -44,6 +44,7 @@ below documents one directory — this README is the single doc for the whole re
 ai-toolbox/
   install.sh           # one-time: puts the `ai-toolbox` command on your PATH
   bin/ai-toolbox       # the CLI that installs any of the below into a repo (idempotent)
+    lib/                 # its helpers: walkthrough UI + steps, MCP converters, layout migration
   templates/           # blank, well-structured skeletons you fill in per project
     AGENTS.template.md   # canonical project knowledge (the source of truth)
     CLAUDE.template.md   # thin Claude Code adapter (@AGENTS.md)
@@ -72,38 +73,42 @@ you — no more hand-copying files or merging JSON. Nothing here is all-or-nothi
 ```bash
 git clone <this repo> ~/Developer/ai-toolbox && cd ~/Developer/ai-toolbox
 ./install.sh                 # puts `ai-toolbox` on your PATH (no manual PATH edits)
-ai-toolbox base-charter      # appends the always-on charter to each harness global config
-ai-toolbox pi-init           # optional, once: install Pi's MCP client package globally
 ```
-`base-charter` auto-detects which harness homes exist and writes to those:
-`~/.claude/CLAUDE.md` (Claude Code), `~/.codex/AGENTS.md` (Codex), and
-`~/.pi/agent/AGENTS.md` (Pi's global context file). Every per-repo command does the
-same detection, including Pi when `~/.pi` or `./.pi` exists;
-`--harness claude|codex|pi|both|all` (or a comma-separated list) overrides it.
-`ai-toolbox mcp` writes `.pi/mcp.json` alongside the other selected harness
-configurations.
+That is it. The symlink points at `bin/ai-toolbox` in the clone, so a `git pull`
+updates the command with no re-install. The other two once-per-machine jobs —
+`ai-toolbox base-charter` (the always-on charter into each harness's global config) and
+`ai-toolbox pi-init` (Pi's MCP client package, which its core doesn't ship) — are
+offered by `ai-toolbox setup` below, or you can run them directly.
 
-**Per repo — the guided path (recommended).** From inside the target repo:
+**Per repo — start here.** From inside the target repo:
 ```bash
-ai-toolbox setup    # walks you through harnesses, MCPs, hooks, skills, secrets — then verifies
+ai-toolbox setup    # the guided walkthrough
 ```
 One interview, one plan to approve, nothing written until you do. It picks the
-harnesses (pre-checking the ones you have), installs Pi's MCP client if you chose Pi,
-scaffolds the knowledge files, takes any missing MCP tokens straight into the repo
-`.env`, and finishes by telling you exactly how to start each harness. Install
+harnesses (pre-checking the ones you have), offers the once-per-machine bits, folds an
+older per-harness layout into `.agents/` if it finds one, scaffolds the knowledge files,
+installs the MCPs/hooks/skills you confirm, takes any missing MCP tokens straight into
+the repo `.env`, and finishes by telling you exactly how to start each harness. Install
 [charmbracelet/gum](https://github.com/charmbracelet/gum) (`brew install gum`) for the
 full TUI — without it the same walkthrough runs on plain prompts, and
 `AI_TOOLBOX_NO_GUM=1` forces that mode.
 
-**Per repo — the fast path.**
-```bash
-ai-toolbox init     # scaffolds AGENTS.md/CLAUDE.md + installs the tailored tooling you confirm
-```
-Prefer the model to author `AGENTS.md` by interview? Install the skill once
-(`ai-toolbox skill init --user`) and run `/toolbox-init` in your harness instead — it
-detects the stack, asks for the non-obvious rules, then does the same install. See
-first, install nothing? `ai-toolbox recommend` (or `ai-toolbox status` for what's
-already there).
+**Which entry point?** They differ only in how much they decide for you:
+
+| | Interactive | Writes knowledge files | Best for |
+|---|---|---|---|
+| `ai-toolbox setup` | full walkthrough | yes (skeletons) | the normal case, and any first run |
+| `ai-toolbox init [--yes]` | four `[Y/n]` prompts | yes (skeletons) | you know what you want; `--yes` for unattended/CI |
+| `ai-toolbox bootstrap [--yes]` | four `[Y/n]` prompts | no | adding tooling to a repo whose `AGENTS.md` already exists |
+| `/toolbox-init` (skill) | model interviews you | yes (**authored**, not skeletons) | when you want the model to write `AGENTS.md` properly |
+
+Only the skill actually *authors* `AGENTS.md` — the CLI drops a skeleton for you to fill
+in. Install it once with `ai-toolbox skill init --user`. See first, install nothing?
+`ai-toolbox recommend` (or `ai-toolbox status` for what's already there).
+
+Every per-repo command auto-detects which harnesses are initialised (`~/.claude`,
+`~/.codex`, `~/.pi`); `--harness claude|codex|pi|both|all`, or a comma-separated list
+like `--harness claude,pi`, overrides it.
 
 **Per repo — take one piece at a time.** Every command is idempotent; run it from
 the repo (or add `--repo <path>`):
@@ -112,6 +117,7 @@ the repo (or add `--repo <path>`):
 |---|---|---|
 | The whole thing, guided | `ai-toolbox setup` | [Quick start](#quick-start) |
 | Project knowledge | `ai-toolbox init` (or the `/toolbox-init` skill to author by interview) | [Templates](#templates) |
+| To collapse an older layout | `ai-toolbox migrate` (`--dry-run` first) | [What lands in your repo](#what-lands-in-your-repo) |
 | Enforced guardrails | `ai-toolbox hooks` | [Hooks](#hooks) |
 | An MCP (Supabase, Chrome…) | `ai-toolbox mcp supabase context7` | [MCP](#mcp) |
 | Helper skills | `ai-toolbox skill pre-pr capture` (or `--user` for everywhere) | [Skills](#skills) |
@@ -171,7 +177,10 @@ when it spots the old shape.
 The deterministic setup engine for the whole toolkit. Instead of hand-copying files
 and merging JSON, you run one idempotent command. It's what `/toolbox-init` calls
 under the hood, and reads the toolbox's own directories at runtime — so
-`ai-toolbox list` never drifts.
+`ai-toolbox list` never drifts. `bin/ai-toolbox` is the whole CLI; `bin/lib/` holds the
+pieces bash shouldn't do — the walkthrough's UI (`ui.sh`) and steps (`setup.sh`), the
+TOML writer and MCP converters (`codex_toml.py`, `mcp_codex.py`, `mcp_pi.py`), and the
+layout migration (`migrate.py`).
 
 **Setup** — from the repo root, `./install.sh` symlinks `ai-toolbox` into a bin dir
 already on your `PATH` (preferring `~/.local/bin`); if none exists it creates
@@ -186,10 +195,11 @@ symlinks, and `AI_TOOLBOX` overrides it.
 | `ai-toolbox init [--yes\|--dry-run]` | Scaffold `AGENTS.md`/`CLAUDE.md`, then bootstrap the tailored functional layer. The unattended per-repo entry point. |
 | `ai-toolbox bootstrap [--yes\|--dry-run]` | Just the functional layer — detect the stack, show a tailored set, install each group you confirm. |
 | `ai-toolbox recommend` | Print the recommended set for this repo (read-only). |
-| `ai-toolbox status` | What's installed here (hooks · MCP servers · skills · knowledge files). |
+| `ai-toolbox status` | What's installed here — the canonical layer, then each harness's pointers; flags a legacy layout. |
+| `ai-toolbox migrate [--dry-run\|--no-symlink]` | Fold an older per-harness layout into `.agents/` and re-point every config at it. Idempotent. |
 | `ai-toolbox list` | Everything the toolbox offers (hooks · presets · skills · rules). |
-| `ai-toolbox hooks [name...]` | Copy hook scripts + wire their entries into Claude `.claude/settings.json` and/or Codex `.codex/config.toml` `[hooks]` (default: all). |
-| `ai-toolbox mcp <preset...>` | Merge MCP preset(s) into `.mcp.json` and/or convert them into `.codex/config.toml` `[mcp_servers.*]`; prints required secrets; auto-drops helper scripts a preset needs. |
+| `ai-toolbox hooks [name...]` | Copy hook scripts **once** into `.agents/hooks/` + wire them into Claude `.claude/settings.json` and/or Codex `.codex/config.toml` `[hooks]` (default: all). |
+| `ai-toolbox mcp <preset...>` | Merge MCP preset(s) into `.mcp.json` (the source of truth), add Pi's knobs, generate `.codex/config.toml` `[mcp_servers.*]`; prints required secrets; auto-drops helper scripts a preset needs. |
 | `ai-toolbox skill <name...> [--user]` | Install skill(s) into `.agents/skills/` and link `.claude/skills` at it (add `--user` for the `~/` equivalents, `--no-symlink` to copy instead). A group name like `cli` installs each child. |
 | `ai-toolbox rules <stack...>` | **Print** rule snippets to inline into `AGENTS.md` (nothing is written). |
 | `ai-toolbox with-dotenv` | Drop the `.env` loader into `.agents/mcp/`. |
