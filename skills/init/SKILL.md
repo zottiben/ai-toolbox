@@ -1,6 +1,6 @@
 ---
 name: toolbox-init
-description: Bootstrap a repo for the ai-toolbox end to end. Scaffolds the knowledge files (AGENTS.md + a thin CLAUDE.md adapter, optional RULES.md) AND sets up the functional layer — hooks, MCPs, and helper skills — installing only what the detected stack needs. Detects the stack (web, backend, mobile, OR game engine: Unity/Godot/Unreal), auto-fills mechanical facts from real manifests, composes matching starter rule-snippets, interviews you for the non-obvious rules only you know, then recommends and installs the tailored tooling via the `ai-toolbox` CLI. Use when setting up a new or existing project to use this toolkit.
+description: Bootstrap a repo for the ai-toolbox end to end. Scaffolds the knowledge files (AGENTS.md + a thin CLAUDE.md adapter, optional RULES.md) AND sets up the functional layer — hooks, MCPs, and helper skills — installing only what the detected stack needs. Detects the stack (web, backend, mobile, OR game engine - Unity/Godot/Unreal), auto-fills mechanical facts from real manifests, composes matching starter rule-snippets, interviews you for the non-obvious rules only you know, then recommends and installs the tailored tooling via the `ai-toolbox` CLI. Use when setting up a new or existing project to use this toolkit.
 ---
 
 # ai-toolbox init — scaffold project knowledge
@@ -103,12 +103,21 @@ CLI (this repo), so you just decide and confirm; never hand-copy files.
   `ai-toolbox hooks format-on-edit session-context guard-irreversible conventional-commit`,
   `ai-toolbox mcp context7 supabase`, `ai-toolbox skill pre-pr capture`. Each is
   idempotent. (Or `ai-toolbox bootstrap` walks the same groups with a `[Y/n]` prompt.)
-- **Report the manual follow-ups the CLI can't do:** export the MCP secrets it
-  listed, restart your harness, then connect/OAuth (Claude Code `/mcp`; Codex
-  `codex mcp login <server>`). For Unity, the unity MCP self-configures (no preset).
+  Everything lands once, under `AGENTS.md` / `.mcp.json` / `.agents/`; each harness gets
+  pointers. If the repo still has per-harness copies from an older setup, run
+  `ai-toolbox migrate` first (`--dry-run` to see the plan).
+- **Report the manual follow-ups the CLI can't do:** put the MCP secrets it listed in
+  the repo `.env` (or export them), restart your harness, then connect/OAuth (Claude
+  Code `/mcp`; Codex `codex mcp login <server>`; Pi trust the project folder, then
+  `/mcp`). On Pi, MCP itself needs `ai-toolbox pi-init` once per machine - Pi's core
+  ships no MCP client. For Unity, the unity MCP self-configures (no preset).
 - **Greenfield:** hooks + helper skills still apply; hold off on stack-specific
   MCPs until the stack actually lands.
 
 > Once per machine (not per repo): `ai-toolbox base-charter` appends the always-on
-> charter to each detected harness's global config (`~/.claude/CLAUDE.md` and/or
-> `~/.codex/AGENTS.md`). Skip if already done.
+> charter to each detected harness's global config (`~/.claude/CLAUDE.md`,
+> `~/.codex/AGENTS.md`, `~/.pi/agent/AGENTS.md`). Skip if already done.
+>
+> Prefer to hand the whole thing to the CLI? `ai-toolbox setup` runs the same install as
+> a guided walkthrough (harnesses, prerequisites, secrets, per-harness start steps) - it
+> just can't author `AGENTS.md` by interview the way this skill does.

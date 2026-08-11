@@ -50,8 +50,11 @@ fi
 cat <<'EOF'
 
 Done. Next:
-  ai-toolbox base-charter          # once per machine: always-on charter -> ~/.claude/CLAUDE.md and/or ~/.codex/AGENTS.md
-  cd <your repo> && ai-toolbox init   # scaffold AGENTS.md + install the tailored tooling (auto-detects Claude Code / Codex)
+  cd <your repo> && ai-toolbox setup   # guided walkthrough: harnesses, MCPs, hooks, skills, secrets
+
+That covers the once-per-machine bits too (the base charter, and Pi's MCP client if you
+use Pi). Prefer it unattended? `ai-toolbox init --yes`. For the full TUI, install gum:
+`brew install gum` (optional - plain prompts otherwise).
 
 Run `ai-toolbox help` for everything.
 EOF

@@ -13,6 +13,10 @@
 # in .codex/config.toml, which reads the token from the environment you launch codex from —
 # so for Codex, export the token (it won't be read from the repo .env for a remote server).
 #
+# Pi has no headersHelper either, but a header value starting with `!` is run as a command
+# at connect time and its stdout becomes the value — so `--raw` (below) covers Pi:
+#   "headers": {"Authorization": "!.pi/mcp/dotenv-header.sh --raw EXAMPLE_API_TOKEN"}
+#
 # In .mcp.json (copy this to <repo>/.claude/mcp/dotenv-header.sh):
 #   "type": "http",
 #   "url": "https://api.example.com/mcp",
@@ -23,14 +27,16 @@
 #   --env-file <path>   read a file other than ./.env
 #   --header <name>     header name (default: Authorization)
 #   --scheme <scheme>   prefix before the value (default: Bearer; pass "" for none)
+#   --raw               print just the header VALUE, not a JSON headers object
 set -euo pipefail
 
-ENV_FILE=""; HEADER="Authorization"; SCHEME="Bearer"
+ENV_FILE=""; HEADER="Authorization"; SCHEME="Bearer"; RAW=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --env-file) ENV_FILE="${2:-}"; shift 2 ;;
     --header)   HEADER="${2:-}"; shift 2 ;;
     --scheme)   SCHEME="${2:-}"; shift 2 ;;
+    --raw)      RAW=1; shift ;;
     --)         shift; break ;;
     -*)         echo "dotenv-header: unknown option $1" >&2; exit 2 ;;
     *)          break ;;
@@ -48,6 +54,12 @@ VAR="${1:-}"
 VAL="${!VAR:-}"
 [ -n "$VAL" ] || { echo "dotenv-header: '$VAR' is empty (not found in $ENV_FILE)" >&2; exit 1; }
 [ -n "$SCHEME" ] && VAL="$SCHEME $VAL"
+
+# Pi wants the bare value (it owns the header name); Claude Code wants a headers object.
+if [ "$RAW" -eq 1 ]; then
+  printf '%s\n' "$VAL"
+  exit 0
+fi
 
 # JSON-escape backslash and double-quote, then emit a single-object headers map on stdout.
 esc=${VAL//\\/\\\\}; esc=${esc//\"/\\\"}

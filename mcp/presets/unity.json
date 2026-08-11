@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "UnityMCP": {
-      "command": "uv",
-      "args": ["run", "--directory", "${HOME}/Library/Application Support/UnityMCP/UnityMcpServer/src", "server.py"]
+      "command": ".agents/mcp/with-dotenv.sh",
+      "args": ["--", "uv", "run", "--directory", "${HOME}/Library/Application Support/UnityMCP/UnityMcpServer/src", "server.py"]
     }
   }
 }

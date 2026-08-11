@@ -6,13 +6,18 @@ Usage:  mcp_codex.py <config.toml> <preset1.json> [preset2.json ...]
 Merges the converted servers into <config.toml> (created if absent) and prints one
 warning line per genuine harness difference to stdout for the CLI to surface.
 
+Codex is the one harness that cannot read the repo's canonical `.mcp.json` (verified
+against 0.144.1: with the project trusted, only the `.codex/config.toml` server appears),
+so this file is generated output, not a second source to maintain. Note that Codex ignores
+project `.codex/` entirely until the project is trusted.
+
 Conversion rules (verified against Codex MCP docs + a live config.toml):
   stdio command/args                      -> same keys
   env {K: "${K}"}  (host passthrough)     -> env_vars = ["K"]
   env {K: "literal"}                      -> [mcp_servers.<name>.env] table
-  ${VAR} inside args (Codex won't interp) -> route through .codex/mcp/with-dotenv.sh,
+  ${VAR} inside args (Codex won't interp) -> route through .agents/mcp/with-dotenv.sh,
                                              which loads .env and expands ${VAR} at launch
-  command already = with-dotenv.sh        -> keep (path rewritten to .codex/mcp/)
+  command already = with-dotenv.sh        -> keep as-is (shared helper, shared path)
   type:"http" + url                       -> url = "..."   (OAuth via `codex mcp login`)
   headersHelper (Claude-only)             -> bearer_token_env_var + a warning
 """
@@ -25,11 +30,16 @@ VARRE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 # always-set shell basics — not secrets, but Codex still won't interpolate them in a
 # config string, so ${HOME}-style paths must be expanded at launch by the wrapper.
 SHELL_BASICS = {"HOME", "USER", "LOGNAME", "PATH", "PWD", "SHELL", "TMPDIR", "LANG", "TERM"}
-WRAPPER = ".codex/mcp/with-dotenv.sh"
+WRAPPER = ".agents/mcp/with-dotenv.sh"
 
 
 def _rewrite(s):
-    return s.replace(".claude/mcp/", ".codex/mcp/") if isinstance(s, str) else s
+    """Old presets/configs pointed helpers at a per-harness dir; they now live in one place."""
+    if not isinstance(s, str):
+        return s
+    for old in (".claude/mcp/", ".codex/mcp/", ".pi/mcp/"):
+        s = s.replace(old, ".agents/mcp/")
+    return s
 
 
 def _split_env(env):

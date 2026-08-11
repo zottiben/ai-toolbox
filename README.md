@@ -1,11 +1,12 @@
 # ai-toolbox
 
 A portable, harness-agnostic toolkit that **complements** AI coding harnesses
-(Claude Code, Codex, Pi, OpenCode) instead of wrapping them in process. One source of
-truth, installed natively for each: the CLI writes Claude Code's `.claude/` +
-`.mcp.json`, Codex's `.codex/config.toml` + `.agents/skills/`, **and** Pi's
-`.pi/mcp.json` from the same hook scripts, skill folders, and MCP presets - never
-authored twice.
+(Claude Code, Codex, Pi, OpenCode) instead of wrapping them in process. **One copy of
+everything that has content**, in the tool-agnostic places: `AGENTS.md`, `.mcp.json`,
+and `.agents/{skills,hooks,mcp}`. Codex and Pi read those natively. Claude Code reads
+neither `AGENTS.md` nor `.agents/`, so it gets pointers instead of copies - a one-line
+`CLAUDE.md`, a `.claude/skills` symlink, and hook wiring that references the shared
+scripts. Nothing is authored, or maintained, twice.
 
 It's a **personal leverage tool.** Its only job is to make *you* faster and keep
 *you* in control — encode durable knowledge once, scaffold it into any project in
@@ -72,15 +73,29 @@ you — no more hand-copying files or merging JSON. Nothing here is all-or-nothi
 git clone <this repo> ~/Developer/ai-toolbox && cd ~/Developer/ai-toolbox
 ./install.sh                 # puts `ai-toolbox` on your PATH (no manual PATH edits)
 ai-toolbox base-charter      # appends the always-on charter to each harness global config
-ai-toolbox pi-init           # optional, once: install Pi's MCP client extension globally
+ai-toolbox pi-init           # optional, once: install Pi's MCP client package globally
 ```
 `base-charter` auto-detects which harness homes exist and writes to those:
-`~/.claude/CLAUDE.md` (Claude Code) and/or `~/.codex/AGENTS.md` (Codex). Every
-per-repo command does the same detection, including Pi when `~/.pi` or `./.pi`
-exists; `--harness claude|codex|pi|both|all` overrides it. `ai-toolbox mcp` writes
-`.pi/mcp.json` alongside the other selected harness configurations.
+`~/.claude/CLAUDE.md` (Claude Code), `~/.codex/AGENTS.md` (Codex), and
+`~/.pi/agent/AGENTS.md` (Pi's global context file). Every per-repo command does the
+same detection, including Pi when `~/.pi` or `./.pi` exists;
+`--harness claude|codex|pi|both|all` (or a comma-separated list) overrides it.
+`ai-toolbox mcp` writes `.pi/mcp.json` alongside the other selected harness
+configurations.
 
-**Per repo — the smart path (recommended).** From inside the target repo:
+**Per repo — the guided path (recommended).** From inside the target repo:
+```bash
+ai-toolbox setup    # walks you through harnesses, MCPs, hooks, skills, secrets — then verifies
+```
+One interview, one plan to approve, nothing written until you do. It picks the
+harnesses (pre-checking the ones you have), installs Pi's MCP client if you chose Pi,
+scaffolds the knowledge files, takes any missing MCP tokens straight into the repo
+`.env`, and finishes by telling you exactly how to start each harness. Install
+[charmbracelet/gum](https://github.com/charmbracelet/gum) (`brew install gum`) for the
+full TUI — without it the same walkthrough runs on plain prompts, and
+`AI_TOOLBOX_NO_GUM=1` forces that mode.
+
+**Per repo — the fast path.**
 ```bash
 ai-toolbox init     # scaffolds AGENTS.md/CLAUDE.md + installs the tailored tooling you confirm
 ```
@@ -95,6 +110,7 @@ the repo (or add `--repo <path>`):
 
 | Want… | Run | Details |
 |---|---|---|
+| The whole thing, guided | `ai-toolbox setup` | [Quick start](#quick-start) |
 | Project knowledge | `ai-toolbox init` (or the `/toolbox-init` skill to author by interview) | [Templates](#templates) |
 | Enforced guardrails | `ai-toolbox hooks` | [Hooks](#hooks) |
 | An MCP (Supabase, Chrome…) | `ai-toolbox mcp supabase context7` | [MCP](#mcp) |
@@ -103,6 +119,52 @@ the repo (or add `--repo <path>`):
 | A greenfield design guide | `cp -r templates/design <repo>/design/` and fill the skeletons | [Templates](#templates) |
 
 Start small: an `AGENTS.md` + `ai-toolbox hooks` already puts you ahead.
+
+## What lands in your repo
+
+One copy of everything that has content, in the tool-agnostic places. Per-harness
+directories hold **pointers and generated output only** - nothing you maintain by hand,
+nothing to keep in sync.
+
+```
+AGENTS.md                 instructions            Codex + Pi read natively
+.mcp.json                 MCP servers             Claude Code + Pi read natively
+.agents/skills/<name>/    skills                  Codex + Pi read natively
+.agents/hooks/*.sh        hook scripts            referenced by both wirings
+.agents/mcp/*.sh          .env helpers            referenced by every harness
+
+CLAUDE.md                 one line: @AGENTS.md    Claude Code doesn't read AGENTS.md
+.claude/skills            symlink -> ../.agents/skills
+.claude/settings.json     hook wiring only
+.codex/config.toml        generated: MCP tables + hook wiring
+.pi/mcp.json              only a server Pi must define differently (today: pixellab)
+```
+
+Why the split is shaped this way, verified against the current releases rather than
+assumed:
+
+| | reads `AGENTS.md` | reads `.agents/skills` | reads `.mcp.json` |
+|---|---|---|---|
+| Claude Code 2.1.220 | no | no (but follows a symlink) | yes |
+| Codex 0.144.1 | yes | yes | no |
+| Pi 0.84.1 + adapter | yes | yes | yes |
+
+Claude Code is the only holdout on the tool-agnostic paths, and there is no setting to
+change it - the feature requests for both `AGENTS.md` and configurable skill paths are
+closed unimplemented. The symlink and the `@AGENTS.md` import are what keep it on one
+source anyway.
+
+The direction of that symlink is not arbitrary: **Codex does not follow a symlinked
+`.agents/skills`** ([openai/codex#11314](https://github.com/openai/codex/issues/11314)),
+so the canonical directory has to be the real one and `.claude/skills` the link. Two more
+things worth knowing: **Codex ignores project `.codex/` entirely until you trust the
+project**, and Pi likewise loads `.agents/skills` only after you trust the project folder.
+
+**Coming from an older layout?** `ai-toolbox migrate` folds the per-harness copies into
+`.agents/`, re-points `settings.json` / `config.toml` / `.mcp.json` at them, replaces
+`.claude/skills` with the symlink, and regenerates the Codex tables. It is idempotent,
+and `--dry-run` prints the whole plan first. `ai-toolbox setup` offers it automatically
+when it spots the old shape.
 
 ## The `ai-toolbox` CLI
 
@@ -120,17 +182,19 @@ symlinks, and `AI_TOOLBOX` overrides it.
 
 | Command | Does |
 |---|---|
-| `ai-toolbox init [--yes\|--dry-run]` | Scaffold `AGENTS.md`/`CLAUDE.md`, then bootstrap the tailored functional layer. The per-repo entry point. |
+| `ai-toolbox setup` | The guided walkthrough - pick harnesses, prerequisites, knowledge files, MCPs, hooks, skills, secrets; approve one plan; get per-harness start instructions. |
+| `ai-toolbox init [--yes\|--dry-run]` | Scaffold `AGENTS.md`/`CLAUDE.md`, then bootstrap the tailored functional layer. The unattended per-repo entry point. |
 | `ai-toolbox bootstrap [--yes\|--dry-run]` | Just the functional layer — detect the stack, show a tailored set, install each group you confirm. |
 | `ai-toolbox recommend` | Print the recommended set for this repo (read-only). |
 | `ai-toolbox status` | What's installed here (hooks · MCP servers · skills · knowledge files). |
 | `ai-toolbox list` | Everything the toolbox offers (hooks · presets · skills · rules). |
 | `ai-toolbox hooks [name...]` | Copy hook scripts + wire their entries into Claude `.claude/settings.json` and/or Codex `.codex/config.toml` `[hooks]` (default: all). |
 | `ai-toolbox mcp <preset...>` | Merge MCP preset(s) into `.mcp.json` and/or convert them into `.codex/config.toml` `[mcp_servers.*]`; prints required secrets; auto-drops helper scripts a preset needs. |
-| `ai-toolbox skill <name...> [--user]` | Copy skill(s) into `.claude/skills/` and/or `.agents/skills/` (add `--user` for `~/.claude/skills/` · `~/.agents/skills/`). A group name like `cli` installs each child. |
+| `ai-toolbox skill <name...> [--user]` | Install skill(s) into `.agents/skills/` and link `.claude/skills` at it (add `--user` for the `~/` equivalents, `--no-symlink` to copy instead). A group name like `cli` installs each child. |
 | `ai-toolbox rules <stack...>` | **Print** rule snippets to inline into `AGENTS.md` (nothing is written). |
-| `ai-toolbox with-dotenv` | Drop the `.env` loader into `.claude/mcp/`. |
-| `ai-toolbox base-charter` | Append the always-on charter to each detected harness's global config — `~/.claude/CLAUDE.md` and/or `~/.codex/AGENTS.md` (once per machine). |
+| `ai-toolbox with-dotenv` | Drop the `.env` loader into `.agents/mcp/`. |
+| `ai-toolbox pi-init` | Install `pi-mcp-adapter` globally — Pi's MCP client, which its core does not ship (once per machine). |
+| `ai-toolbox base-charter` | Append the always-on charter to each detected harness's global config — `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.pi/agent/AGENTS.md` (once per machine). |
 | `ai-toolbox help` | The full list. |
 
 **Notes.** `--repo <path>` targets another repo (default: current dir).
@@ -243,11 +307,14 @@ Each becomes a `/slash-command` and is auto-selected by its `description`.
 | `cli/*` | CLI-wrapper skills — `fly`, `gh`, `supabase`, `eas`, `aws` |
 
 `SKILL.md` (`name` + `description` frontmatter) is a **cross-agent standard** — the
-same folder works in Claude Code and Codex unmodified. Install with `ai-toolbox skill
-<name…>`; it copies the folder into every detected harness's skills dir: Claude Code
-reads `.claude/skills/` (or `~/.claude/skills/` with `--user`), Codex reads
-`.agents/skills/` (or `~/.agents/skills/` with `--user`). A group name like `cli`
-installs each child. Codex can add an optional `agents/openai.yaml` inside a skill
+same folder works in Claude Code, Codex, and Pi unmodified. Install with `ai-toolbox
+skill <name…>`: the folder lands **once** in `.agents/skills/` (or `~/.agents/skills/`
+with `--user`), which Codex and Pi read natively. Claude Code only ever looks in
+`.claude/skills/`, but it *follows that path when it is a symlink* (verified on
+2.1.220), so the CLI points `.claude/skills` at `../.agents/skills` rather than keeping
+a second copy. `--no-symlink` copies instead, for filesystems where symlinks are
+awkward. Pi loads a project's `.agents/skills/` only after you trust the project folder
+at its first-run prompt. A group name like `cli` installs each child. Codex can add an optional `agents/openai.yaml` inside a skill
 folder for its own UI metadata; the toolbox skills don't need one, and any
 Claude-only frontmatter is simply ignored by Codex.
 
@@ -258,9 +325,11 @@ rules; a hook *enforces* them — deterministically, every time. **Both harnesse
 these:** the scripts read the tool call from stdin JSON (`tool_name` / `tool_input`),
 block with **exit code 2** + a stderr reason, and inject context via
 `hookSpecificOutput.additionalContext` — a contract Claude Code and Codex share. The
-same script is copied to `.claude/hooks/` (wired into `settings.json`) **and**
-`.codex/hooks/` (wired into `.codex/config.toml` `[hooks]`); the shell logic is one
-source.
+same script lives once in `.agents/hooks/` and both harnesses are pointed at it - both
+take an arbitrary command path, so there is nothing to copy: Claude Code via
+`${CLAUDE_PROJECT_DIR}/.agents/hooks/…` in `settings.json`, Codex via a cwd-relative
+`.agents/hooks/…` in `.codex/config.toml` `[hooks]`. Pi has no shell-hook mechanism at
+all (its extensions are TypeScript), so hooks are a two-harness feature.
 
 | Script | Event | Does |
 |---|---|---|
@@ -308,18 +377,27 @@ your environment.
 The through-line: prefer the MCP that lets you *verify the real thing*
 (chrome-devtools / mobile / unity), *pull source-of-truth context* (figma /
 clickup), or *act as the user* (claude-in-chrome). A project's `AGENTS.md` should
-name which to use. Config lives per harness: Claude Code project `.mcp.json` or
-global `~/.claude.json`; Codex `.codex/config.toml` (or `~/.codex/config.toml`); **Pi**
-`.pi/mcp.json` (project) or `~/.pi/agent/mcp.json` (global), read by the
-`pi-mcp-extension` package; OpenCode its own file. `ai-toolbox mcp` keeps the presets
-as the single source and **converts** them to each format: for Codex it emits
-`[mcp_servers.<name>]` tables, mapping a `${VAR}` env secret to `env_vars = ["VAR"]`
-(host-env passthrough), a `${VAR}` in args to a `with-dotenv.sh` wrap that expands it
-at launch, and a remote `headersHelper` to `bearer_token_env_var` (with a printed
-caveat - see below). For Pi it emits pi-mcp `mcpServers` with explicit
-`transport`/`lifecycle`, routes any `${VAR}` (in args **or** env) through the same
-`with-dotenv.sh` wrap (Pi does not interpolate config either), and maps remote OAuth
-servers to `auth: {"type": "oauth"}` (see below).
+name which to use.
+
+**`.mcp.json` is the repo's MCP source of truth.** Claude Code reads it natively, and so
+does Pi's adapter - a repo with a `.mcp.json` and no `.pi/` directory at all connects
+fine (verified). `ai-toolbox mcp` merges the presets into that one file, adds Pi's two
+knobs to it (`lifecycle`, `directTools` - unknown keys that Claude Code ignores), and
+only then derives what cannot be shared:
+
+- **`.codex/config.toml`** is *generated output*. Codex cannot read `.mcp.json`
+  (verified against 0.144.1), so its `[mcp_servers.<name>]` tables are produced from the
+  same source: a `${VAR}` env secret becomes `env_vars = ["VAR"]` (host-env passthrough),
+  a `${VAR}` in args becomes a `with-dotenv.sh` wrap that expands it at launch, and a
+  remote `headersHelper` becomes `bearer_token_env_var` (with a printed caveat - see
+  below). Re-running the command regenerates it; don't hand-edit it.
+- **`.pi/mcp.json`** appears only for a server whose Pi definition would be *wrong* for
+  Claude Code. Today that is exactly one case: a `headersHelper` server, because Pi needs
+  a `headers` value that Claude Code would send as a literal string. Everything else lives
+  in the shared file.
+
+Global scopes still exist if you want them (`~/.claude.json`, `~/.codex/config.toml`,
+`~/.pi/agent/mcp.json`); the toolbox works per repo.
 
 **Two rules the research made clear.** (1) **Adopt, don't rebuild** — if a service
 ships an official MCP, use it; only *build* one when no CLI exists and the API is
@@ -343,7 +421,7 @@ you to `/mcp`:
 | `figma-framelink` | `GLips/Figma-Context-MCP` (stdio) | `FIGMA_API_KEY` | API-key fallback for design context | distinct server name, so it can coexist with official `figma` |
 | `expo` | official Expo (remote) | OAuth via `/mcp` | EAS build triage, TestFlight crash/review, RN DevTools | covers much of an "App Store Connect" need |
 | `sentry` | official Sentry (remote) | OAuth via `/mcp` | crash RCA (Seer) in-editor | stdio alt: `npx @sentry/mcp-server` |
-| `pixellab` | official PixelLab (remote) | `PIXELLAB_API_TOKEN` (in repo `.env`) | generate pixel-art characters, animations, tilesets (4/8-dir sprites, isometric, terrain) - game-art asset gen | Claude uses `headersHelper`; Pi uses an `mcp-remote` stdio bridge; Codex requires an exported token; game/pixel-art only |
+| `pixellab` | official PixelLab (remote) | `PIXELLAB_API_TOKEN` (in repo `.env`) | generate pixel-art characters, animations, tilesets (4/8-dir sprites, isometric, terrain) - game-art asset gen | Claude uses `headersHelper`; Pi runs the same helper as a `!command` header; Codex requires an exported token; game/pixel-art only |
 | `unity` | `CoplayDev/unity-mcp` | none | drive the Unity Editor — scenes, GameObjects, play-mode, run tests, edit scripts; the game "see it actually work" | needs `uv` + the MCP-for-Unity package; `--directory` defaults to the **macOS** server path (see note) |
 
 > **Unity setup.** The `unity` preset needs the MCP-for-Unity package in your project
@@ -368,48 +446,69 @@ lives only in `.env` needs a bridge, and it differs by transport:
 - **stdio servers** — run through **`with-dotenv.sh`** (`ai-toolbox with-dotenv`, or
   `ai-toolbox mcp` drops it automatically for presets that use it): it loads `.env`
   at launch, then execs the server. Set the server's `command` to
-  `.claude/mcp/with-dotenv.sh` and put the real command after a `--`; `--need VAR`
+  `.agents/mcp/with-dotenv.sh` and put the real command after a `--`; `--need VAR`
   documents + requires a var, `--env-file` picks another file, `--set TGT=SRC` remaps
-  a per-env token name.
+  a per-env token name. **This is the canonical form for every secret-bearing stdio
+  preset**, precisely because it behaves the same in all three harnesses - which is what
+  lets one `.mcp.json` entry serve all of them.
 - **remote HTTP servers** — there's no local process to wrap, so a static
   `Authorization: Bearer ${VAR}` header can't read `.env`. Use **`headersHelper`** — a
   command Claude Code runs at *connect time* whose JSON stdout becomes the request
-  headers. **`dotenv-header.sh`** does this: `"headersHelper": ".claude/mcp/dotenv-header.sh
+  headers. **`dotenv-header.sh`** does this: `"headersHelper": ".agents/mcp/dotenv-header.sh
   PIXELLAB_API_TOKEN"` reads the token from `.env` and emits `{"Authorization":"Bearer …"}`.
   `ai-toolbox mcp` drops the helper automatically (see the `pixellab` preset). Needs a
   recent Claude Code (`headersHelper`, ≥ v2.1.193); it runs arbitrary shell, so it
-  executes only after you accept the workspace-trust prompt.
+  executes only after you accept the workspace-trust prompt. Pi has no `headersHelper`
+  but runs any header value starting with `!` as a command, so the same script covers it
+  with `--raw` (which prints the bare value instead of a JSON object).
 
-**On Codex the `.env` bridge differs.** `with-dotenv.sh` works identically - Codex
-runs the same wrapper, and `ai-toolbox mcp` rewrites the path to `.codex/mcp/` and even
-routes a bare `${VAR}`-in-args server through it (Codex doesn't interpolate config
-strings, so the wrapper expands them at launch). But Codex has **no `headersHelper`**:
+**On Codex the `.env` bridge differs.** `with-dotenv.sh` works identically - Codex runs
+the same shared wrapper, and `ai-toolbox mcp` even routes a bare `${VAR}`-in-args server
+through it (Codex doesn't interpolate config strings, so the wrapper expands them at
+launch). But Codex has **no `headersHelper`**:
 a remote server's token maps to `bearer_token_env_var`, which reads the token from the
 environment you launch `codex` from - so for a remote MCP on Codex, **export the token**
 (it won't be read from the repo `.env`). A `${VAR}` stdio env secret maps to
 `env_vars = ["VAR"]`, the same host-env passthrough Claude Code's `${VAR}` already relies on.
 
 **On Pi the MCP client is a package.** Pi's core is minimal; MCP comes from the
-`pi-mcp-extension` package. Run `ai-toolbox pi-init` once per machine (it runs
-`pi install npm:pi-mcp-extension` globally and is idempotent) - this is "initialise a
-Pi instance with MCP capabilities". After that, `ai-toolbox mcp <preset...>` writes
-`.pi/mcp.json` for the repo and you're done - restart pi and `/mcp` to check status.
-Pi's config is WYSIWYG (**no `${VAR}` interpolation**), so every secret-bearing stdio
-server is routed through `.pi/mcp/with-dotenv.sh` exactly like Codex: it loads the repo
-`.env` and expands `${VAR}` in the args at launch, so tokens like `FIGMA_API_KEY` /
-`SUPABASE_ACCESS_TOKEN` stay in `.env` (no export needed). **OAuth is clean on Pi:** a
-remote OAuth server (the `clickup`, `figma`, `expo`, and `sentry` presets today, or
-any remote MCP you add later) is emitted as `transport: "streamable-http"` +
-`auth: {"type": "oauth"}`, and the extension runs the
-full OAuth2 + PKCE flow in the browser on first connect, caching the token to disk so
-it survives restarts - no `codex mcp login` equivalent to run. Servers default to
-`lifecycle: "eager"` (tools ready at session start; flip to `"lazy"` in `.pi/mcp.json`
-for manual `/mcp:start`). Pi has no `headersHelper`, so the `pixellab` preset instead
-uses `.pi/mcp/with-dotenv.sh` to load `PIXELLAB_API_TOKEN`, then starts
-`mcp-remote@latest` as a stdio-to-HTTP bridge with its documented `--header` option.
-The token is expanded only in the child process, never written to config; `npx` fetches
-the bridge on first use. This makes PixelLab push-button on Pi too, while retaining its
-repo `.env` workflow.
+`pi-mcp-adapter` package. Run `ai-toolbox pi-init` once per machine (it runs
+`pi install npm:pi-mcp-adapter` globally and is idempotent) - this is "initialise a
+Pi instance with MCP capabilities". After that, `ai-toolbox mcp <preset...>` is all you
+need - Pi reads the repo's `.mcp.json` directly. Restart pi, trust the project folder
+when it asks, and `/mcp` to check status.
+
+Pi **never interpolates `command`/`args`**, which is why every secret-bearing stdio
+preset uses `.agents/mcp/with-dotenv.sh`: it loads the repo `.env` and expands `${VAR}`
+in the args at launch, so tokens like `FIGMA_API_KEY` / `SUPABASE_ACCESS_TOKEN` stay in
+`.env` (no export needed) and the *same* entry works in Claude Code and Codex. For remote
+servers Pi runs a header value that starts with `!` as a *command* at connect time and
+uses its stdout - so a `headersHelper` preset like `pixellab` gets a `.pi/mcp.json`
+override of `"Authorization": "!.agents/mcp/dotenv-header.sh --raw PIXELLAB_API_TOKEN"`,
+keeping the same repo-`.env` workflow with no bridge process and no token in the config.
+That is the one server that needs a Pi-only definition.
+
+**OAuth is clean on Pi:** a remote server with no static credential (the `clickup`,
+`figma`, `expo`, and `sentry` presets today, or any remote MCP you add later) needs no
+`auth` key at all - the adapter treats an absent one as deferred auto-detected OAuth and
+runs the full OAuth2 + PKCE flow in the browser on first connect, storing the token in
+the OS credential store so it survives restarts. No `codex mcp login` equivalent to run.
+
+**Two Pi-specific knobs the converter sets for you.** *stdio* servers get
+`lifecycle: "eager"` + `directTools: true` - they are local, cheap to spawn, and their
+tools land in the prompt exactly like Claude Code. *Remote* servers get
+`lifecycle: "lazy"` and stay behind the adapter's one-tool proxy, because the SaaS
+servers are the tool-heavy ones (pixellab alone registers 72 tools, ClickUp 55) and the
+adapter itself warns once a session passes ~75 direct tools. The proxy still searches,
+describes, and calls them from cached metadata without connecting. Both keys live on the
+server in `.mcp.json`, so flip `directTools: true` (or `"lazy"`/`"eager"`) right there
+when you want the other trade-off - Claude Code ignores them.
+
+One merge rule worth knowing: the adapter reads `.mcp.json` **and** `.pi/mcp.json` and
+merges them per server, key by key, so a repo set up for both Claude Code and Pi ends up
+with the Pi entry layered over the shared one. That is why the converter never changes a
+server's transport kind - a `command` layered over a `url` would leave an entry with
+both, which the adapter rejects.
 
 **Multiple environments.** Add one server entry per env (they differ only by
 `--project-ref`; refs aren't secret). A Supabase PAT is account-level, so the same
