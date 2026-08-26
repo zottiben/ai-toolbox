@@ -1,8 +1,12 @@
-// Inject via chrome-devtools evaluate_script, wrapped in `() => { ...this... }`.
-// CDP input does not move the real macOS pointer, so a screen recording of
-// CDP-driven clicks shows nothing causing the changes. This draws one instead.
+// Inject with Playwright `page.evaluate(<this body>)`, or via chrome-devtools
+// evaluate_script wrapped in `() => { ...this... }`.
 //
-// Exposes window.__demo = { wait, moveTo, pulse, click, type, cursor, log }.
+// CDP input does not move the real macOS pointer, so a recording of CDP-driven
+// clicks shows nothing causing the changes. This draws a cursor instead, and adds
+// captions so the video carries its own narrative.
+//
+// Exposes window.__demo = { wait, moveTo, pulse, click, hover, type, say, hush,
+// scrollIntoPosition, cursor, log }.
 // Write your choreography as window.__demo.run = async () => { ... } and call it
 // WITHOUT awaiting, so the tool call returns while the demo plays.
 
@@ -21,6 +25,11 @@ style.textContent = `
     transition:transform .5s cubic-bezier(.4,0,.2,1)}
   #__demoRipple.go{animation:__demoPulse .45s ease-out}
   @keyframes __demoPulse{0%{opacity:.9}100%{opacity:0}}
+  #__demoCaption{position:fixed;left:50%;bottom:34px;transform:translateX(-50%);
+    z-index:2147483647;pointer-events:none;background:rgba(17,17,17,.88);color:#fff;
+    font:500 17px/1.4 Inter,-apple-system,sans-serif;padding:10px 20px;border-radius:8px;
+    opacity:0;transition:opacity .3s ease;max-width:70vw;text-align:center}
+  #__demoCaption.show{opacity:1}
 `;
 document.head.appendChild(style);
 
@@ -34,6 +43,10 @@ document.body.appendChild(cursor);
 const ripple = document.createElement('div');
 ripple.id = '__demoRipple';
 document.body.appendChild(ripple);
+
+const caption = document.createElement('div');
+caption.id = '__demoCaption';
+document.body.appendChild(caption);
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -66,7 +79,9 @@ const click = async (el, settle) => {
   await wait(120);
 };
 
-const type = async (el, text, delay = 90) => {
+// `commit` fires Enter, which most fields need to accept the value - React listens
+// to focusout, so a synthetic blur event does nothing.
+const type = async (el, text, delay = 90, commit = true) => {
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
 
   el.focus();
@@ -78,6 +93,24 @@ const type = async (el, text, delay = 90) => {
     el.dispatchEvent(new Event('input', { bubbles: true }));
     await wait(delay);
   }
+
+  if (commit) {
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  }
+};
+
+const say = async (text, hold = 0) => {
+  caption.textContent = text;
+  caption.classList.add('show');
+
+  if (hold) {
+    await wait(hold);
+  }
+};
+
+const hush = async () => {
+  caption.classList.remove('show');
+  await wait(300);
 };
 
 const hover = async (el, settle = 330) => {
@@ -109,6 +142,6 @@ const scrollIntoPosition = (el, topOffset = 250) => {
 cursor.style.transform = 'translate(50vw, 30vh)';
 ripple.style.transform = 'translate(50vw, 30vh)';
 
-window.__demo = { wait, moveTo, pulse, click, type, hover, scrollIntoPosition, cursor, log: [] };
+window.__demo = { wait, moveTo, pulse, click, type, hover, say, hush, scrollIntoPosition, cursor, log: [] };
 
 return 'demo cursor installed';

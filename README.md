@@ -314,7 +314,7 @@ Each becomes a `/slash-command` and is auto-selected by its `description`.
 | `pre-pr` | run the project's real checks + native review before you push |
 | `audit` | self-audit the whole toolbox for drift |
 | `babysit-pr` | shepherd a PR to green, triaging each item |
-| `screen-record-demo` | record a short screen demo of a running web UI — drives the page over CDP with a synthetic cursor, captures with macOS `screencapture`, verifies the file actually captured |
+| `screen-record-demo` | record a short demo of a running web UI — drives the page over CDP with a synthetic cursor, captures the viewport (agent browsers are headless, so `screencapture` sees nothing), converts to mp4 without ffmpeg, verifies the file actually captured |
 | `cli/*` | CLI-wrapper skills — `fly`, `gh`, `supabase`, `eas`, `aws` |
 
 `SKILL.md` (`name` + `description` frontmatter) is a **cross-agent standard** — the
