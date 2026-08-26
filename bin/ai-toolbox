@@ -511,9 +511,9 @@ compute_reco() {
   if [ -f "$REPO/package.json" ]; then
     DETECTED+=("node/ts"); REC_RULES+=(typescript)
     if _pkg_has react || _pkg_has next; then
-      DETECTED+=("react"); REC_RULES+=(react); REC_MCP+=(chrome-devtools playwright)
+      DETECTED+=("react"); REC_RULES+=(react); REC_MCP+=(chrome-devtools playwright); REC_SKILLS+=(screen-record-demo)
     fi
-    _pkg_has vue && { DETECTED+=("vue"); REC_RULES+=(vue); REC_MCP+=(chrome-devtools playwright); }
+    _pkg_has vue && { DETECTED+=("vue"); REC_RULES+=(vue); REC_MCP+=(chrome-devtools playwright); REC_SKILLS+=(screen-record-demo); }
     if _has app.json || _has app.config.js || _has app.config.ts || _pkg_has expo; then
       DETECTED+=("expo"); REC_RULES+=(expo); REC_MCP+=(expo); REC_SKILLS+=(cli/eas)
     fi

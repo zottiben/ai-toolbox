@@ -56,7 +56,7 @@ ai-toolbox/
     rules/               # rule snippets by stack (unity, go, react, expo, supabase, bun, …)
     agents/              # generic agent starters + an authoring template
   skills/              # the tooling (portable playbooks + thin harness adapters)
-    init/ capture/ lint/ pre-pr/ audit/ babysit-pr/ cli/
+    init/ capture/ lint/ pre-pr/ audit/ babysit-pr/ screen-record-demo/ cli/
   mcp/                 # capability layer — registry, template, presets/ (ready configs)
   hooks/               # functional guardrails — shell hooks that ENFORCE the AGENTS.md rules
   background/          # recurring/unattended automation — /loop & /goal guide, babysit-pr, GH Action
@@ -314,6 +314,7 @@ Each becomes a `/slash-command` and is auto-selected by its `description`.
 | `pre-pr` | run the project's real checks + native review before you push |
 | `audit` | self-audit the whole toolbox for drift |
 | `babysit-pr` | shepherd a PR to green, triaging each item |
+| `screen-record-demo` | record a short screen demo of a running web UI — drives the page over CDP with a synthetic cursor, captures with macOS `screencapture`, verifies the file actually captured |
 | `cli/*` | CLI-wrapper skills — `fly`, `gh`, `supabase`, `eas`, `aws` |
 
 `SKILL.md` (`name` + `description` frontmatter) is a **cross-agent standard** — the
