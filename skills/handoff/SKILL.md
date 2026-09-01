@@ -8,9 +8,14 @@ description: Checkpoint the build before you clear/compact the context or end a 
 Make it safe to clear or compact mid-build and pick up seamlessly in a fresh context.
 This *complements* the harness's native compaction - it adds the durability compaction
 skips. Two things must be true when you finish: the **repo** is the durable source of
-truth (committed + pushed + green), and a committed **`HANDOFF.md`** tells the next
-context where things are and what to do first. A fresh context sees only what's in git
-plus what it's pointed at - everything else is lost. Run the steps in order.
+truth (committed + pushed + green), and a **resume doc** tells the next context where
+things are and what to do first. A fresh context sees only what's in git plus what it's
+pointed at - everything else is lost. Run the steps in order.
+
+**Where the resume doc goes.** If `aip` is on PATH, it goes in the ai-planner database
+(step 3a) - scoped to this plan and this worktree, so it can't be copied between
+worktrees or drift out of sync with the plan. Otherwise fall back to a committed
+`HANDOFF.md` (step 3b).
 
 ## 1. Commit and push in-progress work
 `git status --short`. Uncommitted work vanishes on handoff. If there's any:
@@ -27,7 +32,35 @@ Makefile/Taskfile, CI) - typecheck / lint / test / build. Record the short HEAD 
 each PASS/FAIL. If anything is red, fix it - or record precisely what's red and why.
 Never certify green over a failure.
 
-## 3. Refresh HANDOFF.md (the resume doc)
+## 3a. Record the handoff (when `aip` is available)
+The plan already holds the slice statuses, decisions and progress, so record only what
+it doesn't: the gates you actually ran, what to do first, and what you learned.
+
+```sh
+aip handoff write \
+  --gate typecheck=pass --gate "test=pass:731 tests" --gate lint=pass \
+  --next "PR2 - button variant + Broker Settlements" \
+  --notes "…anything the plan doesn't already say…"
+```
+
+Record each gate's **real** result - a failure is `--gate lint=fail`, never omitted.
+Before this, make sure the plan itself is current, since that's what the next context
+reads:
+
+```sh
+aip slice set PR1 in_review        # or done / blocked --reason "…"
+aip log "…what happened this session…" --slice PR1
+aip gotcha add "<title>" "<the API quirk / verification trick>"
+aip question add "<the thing only Ben can decide>"
+```
+
+A gotcha that's a *durable* project rule belongs in `AGENTS.md` instead (use
+`toolbox-capture`); the planner holds volatile, this-build state.
+
+Then skip to step 4 - `aip resume` renders the resume doc from live state, so there is
+no file to keep in sync.
+
+## 3b. Refresh HANDOFF.md (fallback, when `aip` is not installed)
 Write/update a committed `HANDOFF.md` at the repo root so it matches reality. Keep it
 lean - a "you are here + how to resume + gotchas" pointer, not a changelog (git log,
 `CHANGELOG.md`, any roadmap hold the full history). Three parts:
@@ -42,11 +75,15 @@ If the project auto-loads a memory (Claude Code) or a global `AGENTS.md` (Codex)
 the one-line RESUME pointer there too, so it surfaces without being asked.
 
 ## 4. Confirm, then it's safe to clear
-Tell the user briefly: the HEAD sha, that it's pushed + green, that `HANDOFF.md` is
-current, and how to resume - start a fresh session and say **"read HANDOFF.md and
-continue"**. Then it's safe to `/clear` or `/compact`.
+Tell the user briefly: the HEAD sha, that it's pushed + green, that the handoff is
+recorded, and how to resume - start a fresh session and say **"`aip resume` and
+continue"** (or **"read HANDOFF.md and continue"** on the fallback path). Then it's safe
+to `/clear` or `/compact`.
 
 ## What resume looks like (next context)
-Fresh session: `git pull`, read `HANDOFF.md` (+ `AGENTS.md`), re-run the gates to confirm
-the certified-green baseline still holds, then continue the next item in small, verified,
-committed increments.
+Fresh session: `git pull`, then `aip resume` (or read `HANDOFF.md`) plus `AGENTS.md`,
+re-run the gates to confirm the certified-green baseline still holds, then continue the
+next item in small, verified, committed increments.
+
+With `aip` installed the session-start hook already names the plan, the slice and the
+next item before you're asked, so `aip resume` is a deepening rather than a discovery.
