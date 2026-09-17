@@ -1,0 +1,30 @@
+[package]
+name = "ai-toolbox-desktop"
+description = "The ai-toolbox board as a desktop app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "ai-toolbox-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+ai-toolbox-core = { path = "../ai-toolbox-core" }
+ai-toolbox-ui = { path = "../ai-toolbox-ui" }
+anyhow.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-window-state = "2"
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+
+[features]
+# Tauri's own convention: the CLI sets this so a production bundle refuses to load a dev
+# server it should not be talking to.
+custom-protocol = ["tauri/custom-protocol"]
+
+[lints]
+workspace = true

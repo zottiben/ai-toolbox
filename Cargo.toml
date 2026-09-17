@@ -4,6 +4,16 @@ members = [
     "crates/ai-toolbox-core",
     "crates/ai-toolbox-ui",
     "crates/ai-toolbox",
+    "crates/ai-toolbox-desktop",
+]
+
+# The desktop app is out of the default set on purpose: it pulls in a webview toolchain,
+# and nobody editing the merge rules should pay for that on every `cargo test`. Build it
+# by name - `cargo build -p ai-toolbox-desktop` - or through the release workflow.
+default-members = [
+    "crates/ai-toolbox-core",
+    "crates/ai-toolbox-ui",
+    "crates/ai-toolbox",
 ]
 
 [workspace.package]

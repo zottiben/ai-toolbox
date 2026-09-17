@@ -8,3 +8,6 @@ __pycache__/
 # The frontend's node_modules. ui/dist IS committed - it is compiled into the binary,
 # so `cargo install` has to work with a Rust toolchain and nothing else.
 ui/node_modules
+
+# Tauri writes its capability schemas into the desktop crate at build time.
+crates/ai-toolbox-desktop/gen/schemas
