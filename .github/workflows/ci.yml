@@ -71,5 +71,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # `--severity=warning` drops the info-level "cannot follow a sourced file"
+      # remarks. Every one of them is a file sourced through a path computed at run
+      # time - a hook finding its own `_lib.sh`, a launcher reading the repo's `.env` -
+      # which is the design rather than an oversight, and failing the build on advice
+      # that can never be acted on teaches people to ignore the gate.
       - name: Shellcheck
-        run: shellcheck install/install.sh bin/ai-toolbox hooks/*.sh mcp/*.sh
+        run: shellcheck --severity=warning install/install.sh bin/ai-toolbox hooks/*.sh mcp/*.sh

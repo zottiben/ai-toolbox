@@ -3,6 +3,8 @@
 # Best-effort — NEVER blocks (always exits 0). Uses the project's own tools if present.
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"; . "$DIR/_lib.sh"
+# shellcheck disable=SC2034  # read by the helpers in _lib.sh, which shellcheck
+# cannot follow through the runtime-computed $DIR above.
 HOOK_JSON=$(cat)
 
 # Claude Code reports the edited path in tool_input.file_path. (Codex edits go through
