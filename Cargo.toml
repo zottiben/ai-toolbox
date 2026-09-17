@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ai-toolbox-core",
+    "crates/ai-toolbox",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/zottiben/ai-toolbox"
+
+[workspace.dependencies]
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+toml = { version = "1", features = ["preserve_order"] }
+clap = { version = "4", features = ["derive", "env"] }
+sha2 = "0.10"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
