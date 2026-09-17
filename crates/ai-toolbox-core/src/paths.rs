@@ -31,6 +31,20 @@ pub const LEGACY_DIRS: [&str; 5] = [
     ".pi/mcp",
 ];
 
+/// Files the operating system leaves lying about, which are not configuration.
+///
+/// This matters more than it looks. macOS writes `.DS_Store` into any directory somebody
+/// opens in Finder, and one inside a skill folder would change that folder's hash - so
+/// the skill would read as edited against the catalogue, for ever, and doctor would keep
+/// advising a person about a file they never touched. Found in the wild, in
+/// `.agents/.DS_Store` and `.agents/skills/.DS_Store`.
+pub fn is_os_noise(name: &str) -> bool {
+    matches!(
+        name,
+        ".DS_Store" | "Thumbs.db" | "desktop.ini" | ".localized"
+    )
+}
+
 /// The Pi MCP client package. Pi ships without MCP support; this is the optional
 /// package that adds it, and it is installed once per machine rather than per repo.
 pub const PI_MCP_PACKAGE: &str = "pi-mcp-adapter";

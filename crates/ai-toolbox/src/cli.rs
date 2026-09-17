@@ -106,6 +106,26 @@ pub enum Command {
     WithDotenv,
     /// Install Pi's MCP client. Once per machine.
     PiInit,
+
+    /// The repos on this machine and how each one is doing.
+    Projects {
+        #[command(subcommand)]
+        action: Option<Projects>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum Projects {
+    /// Look for repos under the scan roots and remember what is found.
+    Scan {
+        /// Where to look. Remembered, so later scans need no flags. Defaults to ~/src.
+        #[arg(long, value_name = "PATH")]
+        root: Vec<PathBuf>,
+    },
+    /// Drop a repo from the list. Does not touch its files.
+    Forget { path: Option<PathBuf> },
+    /// Drop every repo whose directory is gone.
+    Prune,
 }
 
 impl Cli {

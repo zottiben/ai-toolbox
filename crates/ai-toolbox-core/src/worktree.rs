@@ -258,7 +258,13 @@ fn walk(root: &Path, dir: &Path, found: &mut BTreeMap<String, Entry>) -> Result<
     }
     let read = std::fs::read_dir(dir).map_err(|e| Error::io(dir, e))?;
     for item in read {
-        let path = item.map_err(|e| Error::io(dir, e))?.path();
+        let entry = item.map_err(|e| Error::io(dir, e))?;
+        // Not configuration, and reporting it as a difference between worktrees is pure
+        // noise - `.agents/.DS_Store` turns up in real worktrees.
+        if paths::is_os_noise(&entry.file_name().to_string_lossy()) {
+            continue;
+        }
+        let path = entry.path();
         if path.is_dir() && !path.is_symlink() {
             walk(root, &path, found)?;
             continue;
@@ -362,69 +368,7 @@ fn item_of(path: &str) -> (&'static str, String) {
 mod tests {
     use super::*;
     use crate::action;
-    use crate::testing::{catalogue, Fixture};
-    use std::process::Command;
-
-    /// A real git repo with real `git worktree add`s. Nothing here is simulated: the
-    /// behaviour being tested is what git actually does with untracked files.
-    struct Lab {
-        _temp: tempfile::TempDir,
-        main: PathBuf,
-    }
-
-    impl Lab {
-        fn new() -> Lab {
-            let temp = tempfile::tempdir().unwrap();
-            let main = temp.path().join("main");
-            std::fs::create_dir_all(&main).unwrap();
-            run(&main, &["init", "-q", "-b", "main", "."]);
-            run(&main, &["config", "user.email", "test@example.com"]);
-            run(&main, &["config", "user.name", "Test"]);
-            std::fs::write(main.join("README.md"), "tracked\n").unwrap();
-            run(&main, &["add", "README.md"]);
-            run(&main, &["commit", "-qm", "init"]);
-            Lab { _temp: temp, main }
-        }
-
-        fn add_worktree(&self, name: &str) -> PathBuf {
-            let path = self.main.parent().unwrap().join(name);
-            run(
-                &self.main,
-                &["worktree", "add", "-q", path.to_str().unwrap(), "-b", name],
-            );
-            path
-        }
-
-        /// Install the toolkit into the main worktree, as a user would.
-        fn configure(&self) {
-            let catalogue = catalogue();
-            let plan = crate::install::everything(
-                &self.main,
-                &catalogue,
-                &[crate::Harness::Claude, crate::Harness::Codex],
-                &["format-on-edit".to_string(), "session-context".to_string()],
-                &["context7".to_string()],
-                &["pre-pr".to_string(), "cli/gh".to_string()],
-                true,
-            )
-            .unwrap();
-            action::apply(&plan.actions).unwrap();
-        }
-    }
-
-    fn run(dir: &Path, args: &[&str]) {
-        let out = Command::new("git")
-            .arg("-C")
-            .arg(dir)
-            .args(args)
-            .output()
-            .expect("git");
-        assert!(
-            out.status.success(),
-            "git {args:?} failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
+    use crate::testing::{Fixture, Lab};
 
     fn sync(reference: &Path, target: &Path) {
         let mut plan = Plan::default();
@@ -446,7 +390,7 @@ mod tests {
         lab.configure();
         let feature = lab.add_worktree("feature");
 
-        assert!(lab.main.join(".mcp.json").is_file());
+        assert!(lab.main().join(".mcp.json").is_file());
         assert!(
             !feature.join(".mcp.json").exists(),
             "git worktree add carried an untracked file across - the premise has changed"
@@ -463,7 +407,7 @@ mod tests {
         lab.configure();
         lab.add_worktree("feature");
 
-        let comparison = compare(&lab.main).unwrap();
+        let comparison = compare(lab.main()).unwrap();
         assert_eq!(comparison.worktrees.len(), 2);
         assert_eq!(comparison.worktrees[0].standing, Standing::Reference);
         assert_eq!(comparison.worktrees[1].standing, Standing::Unconfigured);
@@ -476,9 +420,9 @@ mod tests {
         lab.configure();
         let feature = lab.add_worktree("feature");
 
-        sync(&lab.main, &feature);
+        sync(lab.main(), &feature);
 
-        let comparison = compare(&lab.main).unwrap();
+        let comparison = compare(lab.main()).unwrap();
         assert!(
             comparison.is_uniform(),
             "{:?}",
@@ -494,7 +438,7 @@ mod tests {
         let lab = Lab::new();
         lab.configure();
         let feature = lab.add_worktree("feature");
-        sync(&lab.main, &feature);
+        sync(lab.main(), &feature);
 
         let link = feature.join(paths::CLAUDE_SKILLS);
         assert_eq!(
@@ -515,10 +459,10 @@ mod tests {
         let lab = Lab::new();
         lab.configure();
         let feature = lab.add_worktree("feature");
-        sync(&lab.main, &feature);
+        sync(lab.main(), &feature);
 
         let mut plan = Plan::default();
-        converge(&mut plan, &lab.main, &feature).unwrap();
+        converge(&mut plan, lab.main(), &feature).unwrap();
         assert!(
             plan.is_noop(),
             "second converge wanted {} change(s)",
@@ -531,12 +475,12 @@ mod tests {
         let lab = Lab::new();
         lab.configure();
         let feature = lab.add_worktree("feature");
-        sync(&lab.main, &feature);
+        sync(lab.main(), &feature);
 
         std::fs::remove_dir_all(feature.join(".agents/skills/pre-pr")).unwrap();
         std::fs::remove_file(feature.join(".agents/hooks/format-on-edit.sh")).unwrap();
 
-        let comparison = compare(&lab.main).unwrap();
+        let comparison = compare(lab.main()).unwrap();
         let state = &comparison.worktrees[1];
         assert_eq!(state.standing, Standing::Diverged);
 
@@ -551,24 +495,43 @@ mod tests {
         let lab = Lab::new();
         lab.configure();
         let feature = lab.add_worktree("feature");
-        sync(&lab.main, &feature);
+        sync(lab.main(), &feature);
 
         let hook = feature.join(".agents/hooks/format-on-edit.sh");
         std::fs::write(&hook, "#!/usr/bin/env bash\n# changed in the worktree\n").unwrap();
 
-        let comparison = compare(&lab.main).unwrap();
+        let comparison = compare(lab.main()).unwrap();
         assert!(comparison.worktrees[1].diff.summary().contains("differ"));
 
         // D6: the reference wins, but only through a plan that showed it first.
         let mut plan = Plan::default();
-        converge(&mut plan, &lab.main, &feature).unwrap();
+        converge(&mut plan, lab.main(), &feature).unwrap();
         assert!(plan.actions.iter().any(|a| a
             .summary
             .starts_with("replace .agents/hooks/format-on-edit.sh")));
         action::apply(&plan.actions).unwrap();
         assert_eq!(
             std::fs::read(&hook).unwrap(),
-            std::fs::read(lab.main.join(".agents/hooks/format-on-edit.sh")).unwrap()
+            std::fs::read(lab.main().join(".agents/hooks/format-on-edit.sh")).unwrap()
+        );
+    }
+
+    #[test]
+    fn os_litter_is_not_a_difference_between_worktrees() {
+        let lab = Lab::new();
+        lab.configure();
+        let feature = lab.add_worktree("feature");
+        sync(lab.main(), &feature);
+
+        // Exactly what was found in the wild.
+        std::fs::write(feature.join(".agents/.DS_Store"), [0u8, 1, 2]).unwrap();
+        std::fs::write(feature.join(".agents/skills/.DS_Store"), [0u8, 1, 2]).unwrap();
+
+        let comparison = compare(lab.main()).unwrap();
+        assert!(
+            comparison.is_uniform(),
+            "Finder litter is not a configuration difference: {:?}",
+            comparison.worktrees[1].diff
         );
     }
 
@@ -577,20 +540,20 @@ mod tests {
         let lab = Lab::new();
         lab.configure();
         let feature = lab.add_worktree("feature");
-        sync(&lab.main, &feature);
+        sync(lab.main(), &feature);
 
         let own = feature.join(".agents/skills/branch-only/SKILL.md");
         std::fs::create_dir_all(own.parent().unwrap()).unwrap();
         std::fs::write(&own, "---\nname: branch-only\n---\n").unwrap();
 
-        let comparison = compare(&lab.main).unwrap();
+        let comparison = compare(lab.main()).unwrap();
         let summary = comparison.worktrees[1].diff.summary();
         assert!(summary.contains("only here"), "{summary}");
         assert!(summary.contains("skill branch-only"), "{summary}");
         // One clause, so nothing to separate - the semicolon only appears with two.
         assert!(!summary.contains(';'), "{summary}");
 
-        sync(&lab.main, &feature);
+        sync(lab.main(), &feature);
         assert!(
             own.is_file(),
             "converge deleted work that only the worktree had"
@@ -601,7 +564,7 @@ mod tests {
     fn a_repo_with_one_worktree_is_uniform() {
         let lab = Lab::new();
         lab.configure();
-        let comparison = compare(&lab.main).unwrap();
+        let comparison = compare(lab.main()).unwrap();
         assert_eq!(comparison.worktrees.len(), 1);
         assert!(comparison.is_uniform());
     }
@@ -625,7 +588,7 @@ mod tests {
         let comparison = compare(&feature).unwrap();
         assert_eq!(
             std::fs::canonicalize(&comparison.reference).unwrap(),
-            std::fs::canonicalize(&lab.main).unwrap()
+            std::fs::canonicalize(lab.main()).unwrap()
         );
         assert_eq!(comparison.worktrees[1].standing, Standing::Unconfigured);
     }

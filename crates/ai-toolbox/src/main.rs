@@ -12,9 +12,10 @@ use std::io::IsTerminal;
 
 use clap::Parser;
 
+use ai_toolbox_core::registry::Registry;
 use ai_toolbox_core::{detect, install, root, survey, Catalogue, Harness, Machine};
 
-use cli::{Cli, Command};
+use cli::{Cli, Command, Projects};
 use cmd::install::Options;
 
 fn main() {
@@ -38,14 +39,18 @@ fn run() -> anyhow::Result<()> {
         Command::List => return cmd::list::run(&catalogue, cli.json),
         Command::Rules { names } => return cmd::rules::run(&catalogue, names),
         Command::PiInit => return cmd::install::pi_init(),
+        Command::Projects { action } => return projects(&cli, &catalogue, action),
         _ => {}
     }
 
     let repo = cli.repo()?;
     let harnesses = cli.harnesses(&repo)?;
+    remember(&cli, &repo);
 
     match &cli.command {
-        Command::List | Command::Rules { .. } | Command::PiInit => unreachable!("handled above"),
+        Command::List | Command::Rules { .. } | Command::PiInit | Command::Projects { .. } => {
+            unreachable!("handled above")
+        }
 
         Command::Status => {
             let survey = survey(&repo, &catalogue)?;
@@ -199,6 +204,62 @@ fn bootstrap(
         );
     }
     Ok(())
+}
+
+fn projects(cli: &Cli, catalogue: &Catalogue, action: &Option<Projects>) -> anyhow::Result<()> {
+    let mut registry = Registry::open()?;
+    match action {
+        None => cmd::projects::list(&registry, catalogue, cli.json),
+        Some(Projects::Scan { root }) => cmd::projects::scan(&mut registry, root, cli.json),
+        Some(Projects::Forget { path }) => {
+            let target = match path {
+                Some(path) => path.clone(),
+                None => std::env::current_dir()?,
+            };
+            cmd::projects::forget(&mut registry, &target, cli.json)
+        }
+        Some(Projects::Prune) => cmd::projects::prune(&mut registry, cli.json),
+    }
+}
+
+/// Note a repo in the registry once the toolkit has written to it.
+///
+/// Only for commands that write, and never for a plain `--dry-run`. Looking at a repo is
+/// not a reason to add it to your project list - you might just be looking - and a
+/// read-only command has no business creating a database in the home directory of
+/// someone who has never run anything else. Repos configured before the registry existed
+/// arrive through `projects scan` instead.
+///
+/// Failure here is deliberately ignored. The registry is an index that a scan can
+/// rebuild, so a read-only home directory should not make `ai-toolbox init` fail after
+/// it has already installed everything correctly.
+fn remember(cli: &Cli, repo: &std::path::Path) {
+    if cli.dry_run || !writes(&cli.command) {
+        return;
+    }
+    if let Ok(mut registry) = Registry::open() {
+        let _ = registry.record(repo, true);
+    }
+}
+
+fn writes(command: &Command) -> bool {
+    match command {
+        Command::Hooks { .. }
+        | Command::Mcp { .. }
+        | Command::Skill { .. }
+        | Command::Bootstrap { .. }
+        | Command::Init { .. }
+        | Command::BaseCharter { .. }
+        | Command::WithDotenv => true,
+        Command::Doctor { fix } => *fix,
+        Command::Worktrees { sync } => *sync,
+        Command::Status
+        | Command::Recommend
+        | Command::List
+        | Command::Rules { .. }
+        | Command::PiInit
+        | Command::Projects { .. } => false,
+    }
 }
 
 fn confirm(question: &str) -> anyhow::Result<bool> {

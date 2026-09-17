@@ -92,6 +92,12 @@ fn collect(root: &Path, dir: &Path, out: &mut Vec<(String, Hash)>) -> Result<()>
         let entry = entry.map_err(|e| Error::io(dir, e))?;
         let path = entry.path();
         let kind = entry.file_type().map_err(|e| Error::io(&path, e))?;
+        // The operating system's litter is not part of the content. Without this a
+        // Finder window opened on a skill folder changes its hash and the skill reads as
+        // edited for ever.
+        if crate::paths::is_os_noise(&entry.file_name().to_string_lossy()) {
+            continue;
+        }
         if kind.is_dir() {
             collect(root, &path, out)?;
             continue;
@@ -175,6 +181,18 @@ mod tests {
             std::fs::write(root.join("nested/helper.js"), "console.log(1)").unwrap();
         }
         assert_eq!(dir(a.path()).unwrap(), dir(b.path()).unwrap());
+    }
+
+    #[test]
+    fn os_litter_does_not_change_a_directory_hash() {
+        // Found in the wild under .agents/ and .agents/skills/. A skill whose hash moved
+        // because Finder was opened on it would be reported as edited for ever.
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("SKILL.md"), "body").unwrap();
+        let clean = dir(root.path()).unwrap();
+
+        std::fs::write(root.path().join(".DS_Store"), [0u8, 1, 2]).unwrap();
+        assert_eq!(dir(root.path()).unwrap(), clean);
     }
 
     #[test]

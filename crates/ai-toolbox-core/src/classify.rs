@@ -364,20 +364,23 @@ pub fn state(inventory: &Inventory, report: &Report) -> State {
         return State::Unconfigured;
     }
     let counts = report.counts();
-    // Legacy layouts and a skills link that is not a link are breakage the item counts
-    // cannot see, because they are about wiring rather than about any one item.
-    let structural_break = !inventory.legacy.is_empty()
-        || matches!(
-            inventory.claude.skills,
-            SkillsLink::Link {
-                resolves: false,
-                ..
-            }
-        );
-    if counts.broken > 0 || structural_break {
+    // A dangling skills link is breakage the item counts cannot see: every item is fine,
+    // and Claude Code still reaches none of them.
+    let cut_off = matches!(
+        inventory.claude.skills,
+        SkillsLink::Link {
+            resolves: false,
+            ..
+        }
+    );
+    if counts.broken > 0 || cut_off {
         return State::Broken;
     }
-    if counts.modified > 0 || counts.stale > 0 {
+    // A legacy layout is not breakage. The hooks under `.claude/hooks` are wired to
+    // `.claude/hooks` and still run - the repo works, it is just on the old shape and
+    // will drift. Doctor rates it a warning, and these two must not disagree: a project
+    // list that calls a working repo broken is a list people stop believing.
+    if counts.modified > 0 || counts.stale > 0 || !inventory.legacy.is_empty() {
         return State::Attention;
     }
     State::Healthy
@@ -642,6 +645,18 @@ mod tests {
         // Group skills are offered by their catalogue key, which is how they are asked for.
         assert!(report.available.skills.contains(&"cli/gh".to_string()));
         assert!(!report.available.presets.contains(&"context7".to_string()));
+    }
+
+    #[test]
+    fn a_legacy_layout_needs_a_look_rather_than_reading_as_broken() {
+        // It still works: those hooks are wired to where they actually are. Doctor calls
+        // this a warning, and the two verdicts have to agree.
+        let fixture = Fixture::configured();
+        std::fs::create_dir_all(fixture.path().join(".claude/hooks")).unwrap();
+
+        let inventory = fixture.inventory();
+        let report = classify(&inventory, &catalogue());
+        assert_eq!(state(&inventory, &report), State::Attention);
     }
 
     #[test]

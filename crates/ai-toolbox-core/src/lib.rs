@@ -25,6 +25,7 @@
 //!   item that is merely out of date from one someone edited here.
 //! - [`worktree`] keeps every worktree of a repo configured the same way, which git
 //!   cannot do for it because all of these files are ignored.
+//! - [`registry`] remembers which repos exist, and nothing else about them (D4).
 
 pub mod action;
 pub mod catalogue;
@@ -42,6 +43,7 @@ pub mod inventory;
 pub mod machine;
 pub mod merge;
 pub mod paths;
+pub mod registry;
 pub mod root;
 pub mod secrets;
 pub mod worktree;
@@ -59,6 +61,7 @@ pub use harness::Harness;
 pub use install::Plan;
 pub use inventory::Inventory;
 pub use machine::Machine;
+pub use registry::{Registry, Summary};
 
 use std::path::Path;
 
