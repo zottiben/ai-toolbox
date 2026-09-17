@@ -69,6 +69,7 @@ fn run() -> anyhow::Result<()> {
             let comparison = ai_toolbox_core::worktree::compare(&repo)?;
             cmd::worktrees::run(&comparison, *sync, cli.dry_run, cli.json)
         }
+        Command::Migrate => cmd::migrate::run(&repo, cli.dry_run, cli.json),
         Command::Doctor { fix } => {
             let survey = survey(&repo, &catalogue)?;
             cmd::doctor::run(&survey, &catalogue, *fix, cli.dry_run, cli.json)
@@ -253,7 +254,8 @@ fn writes(command: &Command) -> bool {
         | Command::Bootstrap { .. }
         | Command::Init { .. }
         | Command::BaseCharter { .. }
-        | Command::WithDotenv => true,
+        | Command::WithDotenv
+        | Command::Migrate => true,
         Command::Doctor { fix } => *fix,
         Command::Worktrees { sync } => *sync,
         Command::Status

@@ -42,6 +42,7 @@ pub mod install;
 pub mod inventory;
 pub mod machine;
 pub mod merge;
+pub mod migrate;
 pub mod paths;
 pub mod registry;
 pub mod root;

@@ -79,6 +79,9 @@ pub enum Command {
         #[arg(long)]
         no_symlink: bool,
     },
+    /// Fold a per-harness repo onto the canonical .agents/ layout.
+    Migrate,
+
     /// Print stack rule snippets to paste into AGENTS.md. Writes nothing.
     Rules {
         #[arg(required = true)]
