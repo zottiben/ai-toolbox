@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use crate::catalogue::Catalogue;
 use crate::hash::Hash;
 use crate::history;
-use crate::inventory::{Inventory, SkillsLink};
+use crate::inventory::Inventory;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "state", rename_all = "kebab-case")]
@@ -359,28 +359,27 @@ pub enum State {
     Broken,
 }
 
-pub fn state(inventory: &Inventory, report: &Report) -> State {
+/// The one-line verdict, derived from the findings rather than worked out again.
+///
+/// This used to be a parallel computation over the inventory, and it disagreed with
+/// `doctor` twice: it called a legacy layout broken when doctor called it a warning, and
+/// it called a repo healthy while doctor reported two broken hooks - because a hook wired
+/// to a script that has been deleted is not an *item*, so no item count could see it.
+///
+/// A summary of the findings cannot drift from the findings. Anything that later teaches
+/// `doctor` a new check teaches this at the same time, for free.
+pub fn state(inventory: &Inventory, report: &Report, findings: &[crate::Finding]) -> State {
     if inventory.is_empty() {
         return State::Unconfigured;
     }
-    let counts = report.counts();
-    // A dangling skills link is breakage the item counts cannot see: every item is fine,
-    // and Claude Code still reaches none of them.
-    let cut_off = matches!(
-        inventory.claude.skills,
-        SkillsLink::Link {
-            resolves: false,
-            ..
-        }
-    );
-    if counts.broken > 0 || cut_off {
+    if findings
+        .iter()
+        .any(|f| f.severity == crate::Severity::Broken)
+    {
         return State::Broken;
     }
-    // A legacy layout is not breakage. The hooks under `.claude/hooks` are wired to
-    // `.claude/hooks` and still run - the repo works, it is just on the old shape and
-    // will drift. Doctor rates it a warning, and these two must not disagree: a project
-    // list that calls a working repo broken is a list people stop believing.
-    if counts.modified > 0 || counts.stale > 0 || !inventory.legacy.is_empty() {
+    let counts = report.counts();
+    if !findings.is_empty() || counts.modified > 0 || counts.stale > 0 {
         return State::Attention;
     }
     State::Healthy
@@ -390,6 +389,14 @@ pub fn state(inventory: &Inventory, report: &Report) -> State {
 mod tests {
     use super::*;
     use crate::testing::{catalogue, Fixture};
+
+    /// The one-line verdict, the way everything that shows it computes it - through the
+    /// full survey, so a test cannot assert a state that no caller could ever see.
+    fn verdict(fixture: &Fixture) -> State {
+        crate::survey(fixture.path(), &catalogue())
+            .expect("surveying the fixture")
+            .state
+    }
 
     #[test]
     fn a_freshly_installed_repo_is_entirely_managed() {
@@ -401,7 +408,7 @@ mod tests {
         assert_eq!(counts.local, 0);
         assert_eq!(counts.broken, 0);
         assert!(counts.managed >= 5, "expected hooks, skills and a server");
-        assert_eq!(state(&fixture.inventory(), &report), State::Healthy);
+        assert_eq!(verdict(&fixture), State::Healthy);
     }
 
     #[test]
@@ -421,7 +428,7 @@ mod tests {
         assert_eq!(hook.origin, Origin::Modified);
         // It still knows where it came from, which is what makes "update it" offerable.
         assert_eq!(hook.catalogue_key.as_deref(), Some("format-on-edit"));
-        assert_eq!(state(&fixture.inventory(), &report), State::Attention);
+        assert_eq!(verdict(&fixture), State::Attention);
     }
 
     #[test]
@@ -468,7 +475,7 @@ mod tests {
         assert_eq!(skill.origin, Origin::Stale);
         assert_eq!(report.counts().stale, 1);
         assert_eq!(report.counts().modified, 0);
-        assert_eq!(state(&inventory, &report), State::Attention);
+        assert_eq!(verdict(&fixture), State::Attention);
     }
 
     #[test]
@@ -488,7 +495,7 @@ mod tests {
             Some("how we deploy the thing")
         );
         // Local is not a fault, so it does not drag the repo out of health.
-        assert_eq!(state(&fixture.inventory(), &report), State::Healthy);
+        assert_eq!(verdict(&fixture), State::Healthy);
     }
 
     #[test]
@@ -576,7 +583,7 @@ mod tests {
             Origin::Broken { why } => assert!(why.contains("with-dotenv.sh"), "got: {why}"),
             other => panic!("expected broken, got {other:?}"),
         }
-        assert_eq!(state(&fixture.inventory(), &report), State::Broken);
+        assert_eq!(verdict(&fixture), State::Broken);
     }
 
     #[test]
@@ -589,7 +596,10 @@ mod tests {
         let report = classify(&inventory, &catalogue());
         let server = &report.items_of(Kind::Server)[0];
         assert_eq!(server.origin, Origin::Managed);
-        assert_eq!(state(&inventory, &report), State::Healthy);
+        // Not a verdict on the whole repo: writing .mcp.json directly leaves the
+        // fixture's generated .codex/config.toml naming a server that is no longer
+        // there, which doctor is right to call out. The claim here is about the server.
+        assert!(!server.origin.needs_attention());
     }
 
     #[test]
@@ -648,15 +658,31 @@ mod tests {
     }
 
     #[test]
+    fn the_verdict_never_disagrees_with_the_findings() {
+        // The bug this pins shut, twice over: a hook wired to a script that has been
+        // deleted is not an *item*, so no item count can see it, and the verdict used to
+        // read "healthy" while doctor reported two broken hooks. Deriving one from the
+        // other makes that impossible rather than merely fixed.
+        let fixture = Fixture::configured();
+        fixture.remove(".agents/hooks/format-on-edit.sh");
+
+        let survey = crate::survey(fixture.path(), &catalogue()).unwrap();
+        assert_eq!(survey.report.counts().broken, 0, "no *item* is broken");
+        assert!(survey
+            .findings
+            .iter()
+            .any(|f| f.severity == crate::Severity::Broken));
+        assert_eq!(survey.state, State::Broken);
+    }
+
+    #[test]
     fn a_legacy_layout_needs_a_look_rather_than_reading_as_broken() {
         // It still works: those hooks are wired to where they actually are. Doctor calls
         // this a warning, and the two verdicts have to agree.
         let fixture = Fixture::configured();
         std::fs::create_dir_all(fixture.path().join(".claude/hooks")).unwrap();
 
-        let inventory = fixture.inventory();
-        let report = classify(&inventory, &catalogue());
-        assert_eq!(state(&inventory, &report), State::Attention);
+        assert_eq!(verdict(&fixture), State::Attention);
     }
 
     #[test]
@@ -670,14 +696,12 @@ mod tests {
         let inventory = fixture.inventory();
         let report = classify(&inventory, &catalogue());
         assert_eq!(report.counts().broken, 0);
-        assert_eq!(state(&inventory, &report), State::Broken);
+        assert_eq!(verdict(&fixture), State::Broken);
     }
 
     #[test]
     fn an_untouched_directory_is_unconfigured_rather_than_healthy() {
         let fixture = Fixture::bare();
-        let inventory = fixture.inventory();
-        let report = classify(&inventory, &catalogue());
-        assert_eq!(state(&inventory, &report), State::Unconfigured);
+        assert_eq!(verdict(&fixture), State::Unconfigured);
     }
 }

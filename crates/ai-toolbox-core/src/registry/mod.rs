@@ -16,10 +16,10 @@ mod scan;
 use std::path::{Path, PathBuf};
 
 pub use db::Db;
-pub use scan::{scan, ScanOptions};
+pub use scan::{scan, ScanOptions, ScanResult};
 
 use crate::error::{Error, Result};
-use crate::{classify, detect, git, harness, worktree, Catalogue, Harness, Inventory, State};
+use crate::{classify, detect, git, worktree, Catalogue, Harness, State};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Repo {
@@ -255,14 +255,15 @@ pub fn summarise(repo: &Repo, catalogue: &Catalogue) -> Result<Summary> {
             worktrees_in_step: true,
         });
     }
-    let inventory = Inventory::read(&repo.path)?;
-    let report = classify::classify(&inventory, catalogue);
+    // The same survey the detail view runs, so a repo cannot read one way in the list
+    // and another way when it is opened.
+    let survey = crate::survey(&repo.path, catalogue)?;
     let comparison = worktree::compare(&repo.path)?;
     Ok(Summary {
-        state: classify::state(&inventory, &report),
-        harnesses: harness::configured(&repo.path),
-        counts: report.counts(),
-        stack: detect::recommend(&repo.path).detected,
+        state: survey.state,
+        harnesses: survey.harnesses,
+        counts: survey.report.counts(),
+        stack: survey.recommendation.detected,
         worktrees: comparison.worktrees.len(),
         worktrees_in_step: comparison.is_uniform(),
         exists: true,

@@ -13,11 +13,11 @@ use crate::out;
 pub fn run(
     survey: &Survey,
     catalogue: &Catalogue,
-    findings: &[Finding],
     fix: bool,
     dry_run: bool,
     json: bool,
 ) -> anyhow::Result<()> {
+    let findings = &survey.findings;
     let mut plan = Plan::default();
     if fix {
         doctor::repair(

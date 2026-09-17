@@ -40,6 +40,9 @@ fn run() -> anyhow::Result<()> {
         Command::Rules { names } => return cmd::rules::run(&catalogue, names),
         Command::PiInit => return cmd::install::pi_init(),
         Command::Projects { action } => return projects(&cli, &catalogue, action),
+        Command::Ui { port, no_open } => {
+            return cmd::ui::run(catalogue.root.clone(), *port, !no_open)
+        }
         _ => {}
     }
 
@@ -48,9 +51,11 @@ fn run() -> anyhow::Result<()> {
     remember(&cli, &repo);
 
     match &cli.command {
-        Command::List | Command::Rules { .. } | Command::PiInit | Command::Projects { .. } => {
-            unreachable!("handled above")
-        }
+        Command::List
+        | Command::Rules { .. }
+        | Command::PiInit
+        | Command::Projects { .. }
+        | Command::Ui { .. } => unreachable!("handled above"),
 
         Command::Status => {
             let survey = survey(&repo, &catalogue)?;
@@ -66,9 +71,7 @@ fn run() -> anyhow::Result<()> {
         }
         Command::Doctor { fix } => {
             let survey = survey(&repo, &catalogue)?;
-            let findings =
-                ai_toolbox_core::diagnose(&repo, &survey.inventory, &survey.report, &catalogue);
-            cmd::doctor::run(&survey, &catalogue, &findings, *fix, cli.dry_run, cli.json)
+            cmd::doctor::run(&survey, &catalogue, *fix, cli.dry_run, cli.json)
         }
 
         Command::Hooks { names } => {
@@ -258,7 +261,8 @@ fn writes(command: &Command) -> bool {
         | Command::List
         | Command::Rules { .. }
         | Command::PiInit
-        | Command::Projects { .. } => false,
+        | Command::Projects { .. }
+        | Command::Ui { .. } => false,
     }
 }
 

@@ -107,6 +107,16 @@ pub enum Command {
     /// Install Pi's MCP client. Once per machine.
     PiInit,
 
+    /// Open the board: every repo on this machine, in one window.
+    Ui {
+        /// 0 asks the OS for a free port, so two boards never fight over a number.
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// Print the URL without opening a browser.
+        #[arg(long)]
+        no_open: bool,
+    },
+
     /// The repos on this machine and how each one is doing.
     Projects {
         #[command(subcommand)]

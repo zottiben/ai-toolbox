@@ -234,6 +234,60 @@ pub fn converge(plan: &mut Plan, reference: &Path, target: &Path) -> Result<()> 
     Ok(())
 }
 
+/// A cheap number that changes when anything the toolkit owns changes.
+///
+/// Stat only - size and modified time, never contents - because this is polled while a
+/// board is open and hashing every skill on a timer would be a waste of a laptop. It is
+/// weaker than a hash by exactly the case nobody hits: an edit that preserves both the
+/// length and the mtime. Anything that decides whether to *write* uses the hash instead;
+/// this only decides whether to look again.
+pub fn fingerprint(root: &Path) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+
+    let mut paths: Vec<PathBuf> = MANAGED_FILES.iter().map(|p| root.join(p)).collect();
+    paths.push(root.join(paths::CLAUDE_SKILLS));
+    for tree in MANAGED_TREES {
+        collect_paths(&root.join(tree), &mut paths);
+    }
+    paths.sort();
+
+    for path in paths {
+        let relative = path.strip_prefix(root).unwrap_or(&path);
+        relative.to_string_lossy().hash(&mut hasher);
+        match std::fs::symlink_metadata(&path) {
+            Ok(meta) => {
+                meta.len().hash(&mut hasher);
+                if let Ok(modified) = meta.modified() {
+                    if let Ok(since) = modified.duration_since(std::time::UNIX_EPOCH) {
+                        since.as_millis().hash(&mut hasher);
+                    }
+                }
+            }
+            // Absent is a state worth hashing: deleting a file has to change this.
+            Err(_) => 0u8.hash(&mut hasher),
+        }
+    }
+    hasher.finish()
+}
+
+fn collect_paths(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if paths::is_os_noise(&entry.file_name().to_string_lossy()) {
+            continue;
+        }
+        let path = entry.path();
+        if path.is_dir() && !path.is_symlink() {
+            collect_paths(&path, out);
+            continue;
+        }
+        out.push(path);
+    }
+}
+
 /// Every managed file in a worktree, by path relative to it.
 fn snapshot(root: &Path) -> Result<BTreeMap<String, Entry>> {
     let mut found = BTreeMap::new();
@@ -557,6 +611,36 @@ mod tests {
         assert!(
             own.is_file(),
             "converge deleted work that only the worktree had"
+        );
+    }
+
+    #[test]
+    fn the_fingerprint_moves_when_a_managed_file_does_and_not_otherwise() {
+        let fixture = Fixture::configured();
+        let before = fingerprint(fixture.path());
+        assert_eq!(
+            before,
+            fingerprint(fixture.path()),
+            "stable when nothing changed"
+        );
+
+        // Something the toolkit does not own.
+        fixture.write("src/main.rs", "fn main() {}\n");
+        assert_eq!(
+            fingerprint(fixture.path()),
+            before,
+            "the project's own files are not this tool's business"
+        );
+
+        fixture.append(".agents/hooks/format-on-edit.sh", "\n# edited\n");
+        let after_edit = fingerprint(fixture.path());
+        assert_ne!(after_edit, before);
+
+        fixture.remove(".agents/hooks/format-on-edit.sh");
+        assert_ne!(
+            fingerprint(fixture.path()),
+            after_edit,
+            "deleting a file has to move it too"
         );
     }
 

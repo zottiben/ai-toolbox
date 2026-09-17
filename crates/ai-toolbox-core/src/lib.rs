@@ -67,10 +67,18 @@ use std::path::Path;
 
 /// Everything worth knowing about one repo, in one call - the shape both `status` and
 /// the board's project endpoint want.
+///
+/// The report is flattened, so `items` and `available` sit at the top level. That is
+/// what `status --json` emits by hand, and one shape for both keeps the board and the
+/// CLI from disagreeing about where to find the same fact.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Survey {
     pub inventory: Inventory,
+    #[serde(flatten)]
     pub report: Report,
+    /// Everything wrong with the repo. Carried here rather than fetched separately,
+    /// because `state` is derived from it and the two must never be computed apart.
+    pub findings: Vec<Finding>,
     pub state: State,
     pub harnesses: Vec<Harness>,
     pub recommendation: detect::Recommendation,
@@ -80,10 +88,12 @@ pub fn survey(repo: impl AsRef<Path>, catalogue: &Catalogue) -> Result<Survey> {
     let repo = repo.as_ref();
     let inventory = Inventory::read(repo)?;
     let report = classify(&inventory, catalogue);
+    let findings = diagnose(repo, &inventory, &report, catalogue);
     Ok(Survey {
-        state: state(&inventory, &report),
+        state: state(&inventory, &report, &findings),
         harnesses: harness::configured(repo),
         recommendation: detect::recommend(repo),
+        findings,
         inventory,
         report,
     })

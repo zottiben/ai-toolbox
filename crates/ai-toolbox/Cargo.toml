@@ -12,10 +12,12 @@ path = "src/main.rs"
 
 [dependencies]
 ai-toolbox-core = { path = "../ai-toolbox-core" }
+ai-toolbox-ui = { path = "../ai-toolbox-ui" }
 anyhow.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 ai-toolbox-core = { path = "../ai-toolbox-core", features = ["testing"] }

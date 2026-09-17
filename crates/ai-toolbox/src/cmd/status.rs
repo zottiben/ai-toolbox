@@ -18,17 +18,20 @@ pub fn run(
     json: bool,
 ) -> anyhow::Result<()> {
     if json {
-        let payload = serde_json::json!({
-            "repo": survey.inventory.repo,
-            "state": survey.state,
-            "harnesses": survey.harnesses,
-            "inventory": survey.inventory,
-            "items": survey.report.items,
-            "available": survey.report.available,
-            "counts": survey.report.counts(),
-            "machine": machine,
-            "catalogue_root": catalogue.root,
-        });
+        // The survey serialises itself, so this and the board's project endpoint emit
+        // the same shape rather than two hand-built ones that drift.
+        let mut payload = serde_json::to_value(survey)?;
+        if let Some(object) = payload.as_object_mut() {
+            object.insert(
+                "counts".to_string(),
+                serde_json::to_value(survey.report.counts())?,
+            );
+            object.insert("machine".to_string(), serde_json::to_value(machine)?);
+            object.insert(
+                "catalogue_root".to_string(),
+                serde_json::to_value(&catalogue.root)?,
+            );
+        }
         println!("{}", serde_json::to_string_pretty(&payload)?);
         return Ok(());
     }

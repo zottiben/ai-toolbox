@@ -38,11 +38,29 @@ impl Secret {
     }
 }
 
-/// Every secret a preset's JSON asks for.
+/// Every secret a preset's JSON asks for, once each.
+///
+/// A variable can look like both kinds at the same time: the `supabase` preset both
+/// `--need`s `SUPABASE_PROJECT_REF` and writes `${SUPABASE_PROJECT_REF}` into its args.
+/// Reporting both would tell somebody to export it *and* that no export is needed, which
+/// is the kind of advice that makes a person stop reading the advice.
+///
+/// `.env` wins, because it is the truth: the wrapper loads the file and expands the
+/// placeholder itself at launch, so nothing has to be exported.
 pub fn scan(value: &serde_json::Value) -> Vec<Secret> {
     let mut found: BTreeSet<Secret> = BTreeSet::new();
     walk(value, &mut found);
-    found.into_iter().collect()
+
+    let from_dotenv: BTreeSet<&String> = found
+        .iter()
+        .filter(|s| s.source == Source::DotEnv)
+        .map(|s| &s.name)
+        .collect();
+    found
+        .iter()
+        .filter(|s| s.source == Source::DotEnv || !from_dotenv.contains(&s.name))
+        .cloned()
+        .collect()
 }
 
 fn walk(value: &serde_json::Value, found: &mut BTreeSet<Secret>) {
@@ -165,6 +183,42 @@ mod tests {
     fn the_same_variable_named_twice_is_reported_once() {
         let found = scan_str(r#"{"a": "${TOKEN}", "b": {"c": "${TOKEN}"}}"#);
         assert_eq!(found.len(), 1);
+    }
+
+    #[test]
+    fn a_variable_the_wrapper_loads_is_not_also_reported_as_needing_an_export() {
+        // Exactly the shipped `supabase` preset: --need it, and use ${it} in the args.
+        // Telling somebody to export it and that no export is needed is worse than
+        // telling them nothing.
+        let found = scan_str(
+            r#"{"command": ".agents/mcp/with-dotenv.sh",
+                "args": ["--need", "REF", "--", "npx", "--project-ref=${REF}"]}"#,
+        );
+        assert_eq!(found.len(), 1, "got {found:?}");
+        assert_eq!(found[0].source, Source::DotEnv);
+    }
+
+    #[test]
+    fn a_placeholder_with_no_wrapper_still_has_to_be_exported() {
+        let found = scan_str(r#"{"command": "npx", "env": {"TOKEN": "${TOKEN}"}}"#);
+        assert_eq!(found[0].source, Source::Environment);
+    }
+
+    #[test]
+    fn the_shipped_supabase_preset_asks_for_each_secret_once() {
+        let catalogue = crate::testing::catalogue();
+        let preset = catalogue.preset("supabase").unwrap();
+        let mut names: Vec<&str> = preset.secrets.iter().map(|s| s.name.as_str()).collect();
+        let before = names.len();
+        names.sort();
+        names.dedup();
+        assert_eq!(
+            names.len(),
+            before,
+            "a name appeared twice: {:?}",
+            preset.secrets
+        );
+        assert!(preset.secrets.iter().all(|s| s.source == Source::DotEnv));
     }
 
     #[test]

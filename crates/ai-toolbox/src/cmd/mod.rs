@@ -5,4 +5,5 @@ pub mod projects;
 pub mod recommend;
 pub mod rules;
 pub mod status;
+pub mod ui;
 pub mod worktrees;
