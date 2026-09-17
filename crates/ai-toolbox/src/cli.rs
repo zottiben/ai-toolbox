@@ -42,10 +42,13 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// What this repo has installed, per harness.
+    #[command(alias = "st")]
     Status,
     /// Everything the catalogue offers.
+    #[command(alias = "ls")]
     List,
     /// What to install here, based on the stack.
+    #[command(alias = "reco")]
     Recommend,
     /// Whether every worktree of this repo is configured the same way.
     Worktrees {
@@ -68,6 +71,7 @@ pub enum Command {
         names: Vec<String>,
     },
     /// Install skills into .agents/skills.
+    #[command(alias = "skills")]
     Skill {
         #[arg(required = true)]
         names: Vec<String>,
@@ -83,6 +87,7 @@ pub enum Command {
     Migrate,
 
     /// Print stack rule snippets to paste into AGENTS.md. Writes nothing.
+    #[command(alias = "rule")]
     Rules {
         #[arg(required = true)]
         names: Vec<String>,
