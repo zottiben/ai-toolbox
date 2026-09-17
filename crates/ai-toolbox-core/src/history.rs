@@ -186,10 +186,30 @@ mod tests {
         crate::testing::catalogue_root()
     }
 
+    /// Whether a path has uncommitted changes.
+    ///
+    /// The two tests below assert that what is on disk is a version git has - which is
+    /// simply false while you are editing the file, and it is a shipped hook, so editing
+    /// it is a normal thing to be doing. Without this they fail during exactly the work
+    /// that would make them fail, with a message about history rather than about the
+    /// edit in front of you.
+    fn dirty(relative: &str) -> bool {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(clone())
+            .args(["status", "--porcelain", "--", relative])
+            .output()
+            .is_ok_and(|out| !out.stdout.is_empty())
+    }
+
     #[test]
     fn the_current_content_of_a_file_is_among_its_versions() {
-        let clone = clone();
         let relative = "hooks/format-on-edit.sh";
+        if dirty(relative) {
+            eprintln!("skipping: {relative} has uncommitted changes");
+            return;
+        }
+        let clone = clone();
         let installed = hash::file(clone.join(relative)).unwrap();
         assert!(
             is_former_version(&clone, relative, &installed),
@@ -201,8 +221,12 @@ mod tests {
     fn the_current_content_of_a_directory_is_among_its_versions() {
         // The directory case is the one with real work in it - reconstructing a tree
         // from git and hashing it the same way the on-disk walk does.
-        let clone = clone();
         let relative = "skills/handoff";
+        if dirty(relative) {
+            eprintln!("skipping: {relative} has uncommitted changes");
+            return;
+        }
+        let clone = clone();
         let installed = hash::dir(clone.join(relative)).unwrap();
         assert!(
             is_former_version(&clone, relative, &installed),
