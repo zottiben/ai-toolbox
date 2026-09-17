@@ -1,0 +1,25 @@
+[package]
+name = "ai-toolbox-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The board. Built to static assets and embedded in the ai-toolbox binary."
+
+[dependencies]
+ai-toolbox-core = { path = "../ai-toolbox-core" }
+axum.workspace = true
+getrandom.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["net", "sync", "time"] }
+tokio-stream.workspace = true
+
+[dev-dependencies]
+ai-toolbox-core = { path = "../ai-toolbox-core", features = ["testing"] }
+tempfile = "3"
+tokio = { workspace = true, features = ["net", "rt-multi-thread"] }
+
+[lints]
+workspace = true

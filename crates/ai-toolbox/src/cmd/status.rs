@@ -18,17 +18,20 @@ pub fn run(
     json: bool,
 ) -> anyhow::Result<()> {
     if json {
-        let payload = serde_json::json!({
-            "repo": survey.inventory.repo,
-            "state": survey.state,
-            "harnesses": survey.harnesses,
-            "inventory": survey.inventory,
-            "items": survey.report.items,
-            "available": survey.report.available,
-            "counts": survey.report.counts(),
-            "machine": machine,
-            "catalogue_root": catalogue.root,
-        });
+        // The survey serialises itself, so this and the board's project endpoint emit
+        // the same shape rather than two hand-built ones that drift.
+        let mut payload = serde_json::to_value(survey)?;
+        if let Some(object) = payload.as_object_mut() {
+            object.insert(
+                "counts".to_string(),
+                serde_json::to_value(survey.report.counts())?,
+            );
+            object.insert("machine".to_string(), serde_json::to_value(machine)?);
+            object.insert(
+                "catalogue_root".to_string(),
+                serde_json::to_value(&catalogue.root)?,
+            );
+        }
         println!("{}", serde_json::to_string_pretty(&payload)?);
         return Ok(());
     }
@@ -86,7 +89,10 @@ fn names(survey: &Survey, kind: Kind) -> Vec<String> {
         .map(|item| match &item.origin {
             // A name on its own reads as fine, so anything that is not gets a mark. This
             // is the difference between status telling you and status reassuring you.
+            // Stale and modified get different marks because they mean opposite things:
+            // one is safe to update, the other is somebody's work.
             Origin::Managed => item.name.clone(),
+            Origin::Stale => out::yellow(&format!("{}~", item.name)),
             Origin::Modified => out::yellow(&format!("{}*", item.name)),
             Origin::Local => out::dim(&format!("{}+", item.name)),
             Origin::Broken { .. } => out::red(&format!("{}!", item.name)),
@@ -156,8 +162,11 @@ fn report_attention(survey: &Survey) {
         let line = format!("{} {}", item.kind.label(), item.name);
         match &item.origin {
             Origin::Broken { why } => out::warn(&format!("{line}: {why}")),
+            Origin::Stale => out::warn(&format!(
+                "{line}: an older version of the catalogue's copy - 'ai-toolbox doctor --fix' updates it"
+            )),
             Origin::Modified => out::warn(&format!(
-                "{line}: edited since it was installed - 'ai-toolbox doctor' shows what changed"
+                "{line}: edited here - 'ai-toolbox doctor' says so, and leaves it alone"
             )),
             _ => {}
         }

@@ -41,7 +41,10 @@ done
 [ -n "$ENV_FILE" ] || ENV_FILE="${CLAUDE_PROJECT_DIR:-.}/.env"
 
 if [ -f "$ENV_FILE" ]; then
-  set -a; . "$ENV_FILE"; set +a
+  set -a
+  # shellcheck source=/dev/null  # the .env path is chosen at run time - that is the point
+  . "$ENV_FILE"
+  set +a
 fi
 
 if [ "${#REMAPS[@]}" -gt 0 ]; then
@@ -64,7 +67,7 @@ fi
 # Code already resolved these before launch (so this is a no-op there); Codex passes
 # config strings through verbatim, so this is what makes ${VAR}-in-args work under Codex.
 expand_vars() {
-  local s=$1 out= name val
+  local s=$1 out='' name val
   while [[ $s == *'${'*'}'* ]]; do
     out+=${s%%'${'*}          # text before the first ${
     s=${s#*'${'}              # drop up to and including the first ${

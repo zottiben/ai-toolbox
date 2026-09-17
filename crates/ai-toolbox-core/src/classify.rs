@@ -5,23 +5,29 @@
 //! type. Every installed item lands in exactly one `Origin`, and `Local` is a perfectly
 //! good place to land: a hand-written skill is a thing people have, not a fault.
 //!
-//! What is *not* here is anything to do with the catalogue's history. Telling a local
-//! edit apart from an item that is simply out of date needs the clone's git log, and
-//! that arrives with the rest of `doctor`.
+//! Telling a local edit apart from an item that is simply out of date needs the clone's
+//! git log, so that question is asked of [`crate::history`] - but only for items that
+//! already differ, which in a healthy repo is none of them. It is asked here rather than
+//! in `doctor` so that one piece of code decides it and every caller agrees.
 
 use std::path::PathBuf;
 
 use crate::catalogue::Catalogue;
 use crate::hash::Hash;
-use crate::inventory::{Inventory, SkillsLink};
+use crate::history;
+use crate::inventory::Inventory;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "state", rename_all = "kebab-case")]
 pub enum Origin {
     /// From the catalogue, unchanged.
     Managed,
-    /// From the catalogue, edited since. Reported, never overwritten without being asked.
+    /// From the catalogue, edited since, and matching no version the catalogue ever
+    /// shipped. Someone's own change. Reported, never overwritten without being asked.
     Modified,
+    /// From the catalogue, and matching a version it *used* to ship. Out of date rather
+    /// than edited, so updating it loses nothing.
+    Stale,
     /// Not in the catalogue at all. Someone's own work.
     Local,
     /// Referenced but not usable.
@@ -34,13 +40,17 @@ impl Origin {
     }
 
     pub fn needs_attention(&self) -> bool {
-        matches!(self, Origin::Modified | Origin::Broken { .. })
+        matches!(
+            self,
+            Origin::Modified | Origin::Stale | Origin::Broken { .. }
+        )
     }
 
     pub fn label(&self) -> &'static str {
         match self {
             Origin::Managed => "managed",
             Origin::Modified => "modified",
+            Origin::Stale => "stale",
             Origin::Local => "local",
             Origin::Broken { .. } => "broken",
         }
@@ -123,6 +133,7 @@ impl Report {
             match item.origin {
                 Origin::Managed => counts.managed += 1,
                 Origin::Modified => counts.modified += 1,
+                Origin::Stale => counts.stale += 1,
                 Origin::Local => counts.local += 1,
                 Origin::Broken { .. } => counts.broken += 1,
             }
@@ -135,13 +146,14 @@ impl Report {
 pub struct Counts {
     pub managed: usize,
     pub modified: usize,
+    pub stale: usize,
     pub local: usize,
     pub broken: usize,
 }
 
 impl Counts {
     pub fn total(&self) -> usize {
-        self.managed + self.modified + self.local + self.broken
+        self.managed + self.modified + self.stale + self.local + self.broken
     }
 }
 
@@ -159,7 +171,7 @@ pub fn classify(inventory: &Inventory, catalogue: &Catalogue) -> Report {
         } else {
             match entry {
                 Some(def) if def.hash == hook.hash => Origin::Managed,
-                Some(_) => Origin::Modified,
+                Some(_) => drifted(catalogue, &format!("hooks/{}.sh", hook.name), &hook.hash),
                 None => Origin::Local,
             }
         };
@@ -178,7 +190,7 @@ pub fn classify(inventory: &Inventory, catalogue: &Catalogue) -> Report {
         let entry = catalogue.skill(&skill.name);
         let origin = match entry {
             Some(def) if def.hash == skill.hash => Origin::Managed,
-            Some(_) => Origin::Modified,
+            Some(def) => drifted(catalogue, &format!("skills/{}", def.key), &skill.hash),
             None => Origin::Local,
         };
         items.push(Item {
@@ -205,7 +217,7 @@ pub fn classify(inventory: &Inventory, catalogue: &Catalogue) -> Report {
         } else {
             match entry {
                 Some(def) if def.hash == helper.hash => Origin::Managed,
-                Some(_) => Origin::Modified,
+                Some(_) => drifted(catalogue, &format!("mcp/{}", helper.name), &helper.hash),
                 None => Origin::Local,
             }
         };
@@ -280,6 +292,19 @@ pub fn classify(inventory: &Inventory, catalogue: &Catalogue) -> Report {
     }
 }
 
+/// An item that differs from the catalogue: is it out of date, or edited here?
+///
+/// Answered from the clone's git history. Where there is no history to read - a tarball
+/// install, or git missing - every difference reads as `Modified`, which is the safe
+/// direction: it is the one that leaves the file alone and asks a human.
+fn drifted(catalogue: &Catalogue, relative: &str, installed: &Hash) -> Origin {
+    if history::is_former_version(&catalogue.root, relative, installed) {
+        Origin::Stale
+    } else {
+        Origin::Modified
+    }
+}
+
 /// Pi's two knobs, which `ai-toolbox mcp --harness pi` adds to the shared `.mcp.json`
 /// and which therefore are not evidence of a hand edit.
 fn without_pi_keys(definition: &serde_json::Value) -> serde_json::Value {
@@ -334,25 +359,27 @@ pub enum State {
     Broken,
 }
 
-pub fn state(inventory: &Inventory, report: &Report) -> State {
+/// The one-line verdict, derived from the findings rather than worked out again.
+///
+/// This used to be a parallel computation over the inventory, and it disagreed with
+/// `doctor` twice: it called a legacy layout broken when doctor called it a warning, and
+/// it called a repo healthy while doctor reported two broken hooks - because a hook wired
+/// to a script that has been deleted is not an *item*, so no item count could see it.
+///
+/// A summary of the findings cannot drift from the findings. Anything that later teaches
+/// `doctor` a new check teaches this at the same time, for free.
+pub fn state(inventory: &Inventory, report: &Report, findings: &[crate::Finding]) -> State {
     if inventory.is_empty() {
         return State::Unconfigured;
     }
-    let counts = report.counts();
-    // Legacy layouts and a skills link that is not a link are breakage the item counts
-    // cannot see, because they are about wiring rather than about any one item.
-    let structural_break = !inventory.legacy.is_empty()
-        || matches!(
-            inventory.claude.skills,
-            SkillsLink::Link {
-                resolves: false,
-                ..
-            }
-        );
-    if counts.broken > 0 || structural_break {
+    if findings
+        .iter()
+        .any(|f| f.severity == crate::Severity::Broken)
+    {
         return State::Broken;
     }
-    if counts.modified > 0 {
+    let counts = report.counts();
+    if !findings.is_empty() || counts.modified > 0 || counts.stale > 0 {
         return State::Attention;
     }
     State::Healthy
@@ -362,6 +389,14 @@ pub fn state(inventory: &Inventory, report: &Report) -> State {
 mod tests {
     use super::*;
     use crate::testing::{catalogue, Fixture};
+
+    /// The one-line verdict, the way everything that shows it computes it - through the
+    /// full survey, so a test cannot assert a state that no caller could ever see.
+    fn verdict(fixture: &Fixture) -> State {
+        crate::survey(fixture.path(), &catalogue())
+            .expect("surveying the fixture")
+            .state
+    }
 
     #[test]
     fn a_freshly_installed_repo_is_entirely_managed() {
@@ -373,7 +408,7 @@ mod tests {
         assert_eq!(counts.local, 0);
         assert_eq!(counts.broken, 0);
         assert!(counts.managed >= 5, "expected hooks, skills and a server");
-        assert_eq!(state(&fixture.inventory(), &report), State::Healthy);
+        assert_eq!(verdict(&fixture), State::Healthy);
     }
 
     #[test]
@@ -388,10 +423,59 @@ mod tests {
             .find(|i| i.name == "format-on-edit")
             .unwrap();
 
+        // No version of the catalogue ever shipped this, so it is an edit, not an
+        // out-of-date copy.
         assert_eq!(hook.origin, Origin::Modified);
         // It still knows where it came from, which is what makes "update it" offerable.
         assert_eq!(hook.catalogue_key.as_deref(), Some("format-on-edit"));
-        assert_eq!(state(&fixture.inventory(), &report), State::Attention);
+        assert_eq!(verdict(&fixture), State::Attention);
+    }
+
+    #[test]
+    fn an_item_matching_an_older_catalogue_version_is_stale_rather_than_modified() {
+        let fixture = Fixture::configured();
+        let catalogue = catalogue();
+
+        // A real former version of skills/handoff, taken from the clone's own history
+        // rather than invented - an invented one could only ever be Modified.
+        let log = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&catalogue.root)
+            .args(["log", "-n2", "--format=%H", "--", "skills/handoff"])
+            .output()
+            .unwrap();
+        let commits: Vec<String> = String::from_utf8_lossy(&log.stdout)
+            .lines()
+            .map(str::to_string)
+            .collect();
+        assert!(
+            commits.len() >= 2,
+            "handoff must have changed at least once"
+        );
+
+        let body = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&catalogue.root)
+            .arg("show")
+            .arg(format!("{}:skills/handoff/SKILL.md", commits[1]))
+            .output()
+            .unwrap();
+        fixture.write(
+            ".agents/skills/handoff/SKILL.md",
+            &String::from_utf8_lossy(&body.stdout),
+        );
+
+        let inventory = fixture.inventory();
+        let report = classify(&inventory, &catalogue);
+        let skill = report
+            .items_of(Kind::Skill)
+            .into_iter()
+            .find(|i| i.name == "handoff")
+            .unwrap();
+        assert_eq!(skill.origin, Origin::Stale);
+        assert_eq!(report.counts().stale, 1);
+        assert_eq!(report.counts().modified, 0);
+        assert_eq!(verdict(&fixture), State::Attention);
     }
 
     #[test]
@@ -411,7 +495,7 @@ mod tests {
             Some("how we deploy the thing")
         );
         // Local is not a fault, so it does not drag the repo out of health.
-        assert_eq!(state(&fixture.inventory(), &report), State::Healthy);
+        assert_eq!(verdict(&fixture), State::Healthy);
     }
 
     #[test]
@@ -499,7 +583,7 @@ mod tests {
             Origin::Broken { why } => assert!(why.contains("with-dotenv.sh"), "got: {why}"),
             other => panic!("expected broken, got {other:?}"),
         }
-        assert_eq!(state(&fixture.inventory(), &report), State::Broken);
+        assert_eq!(verdict(&fixture), State::Broken);
     }
 
     #[test]
@@ -512,7 +596,10 @@ mod tests {
         let report = classify(&inventory, &catalogue());
         let server = &report.items_of(Kind::Server)[0];
         assert_eq!(server.origin, Origin::Managed);
-        assert_eq!(state(&inventory, &report), State::Healthy);
+        // Not a verdict on the whole repo: writing .mcp.json directly leaves the
+        // fixture's generated .codex/config.toml naming a server that is no longer
+        // there, which doctor is right to call out. The claim here is about the server.
+        assert!(!server.origin.needs_attention());
     }
 
     #[test]
@@ -571,6 +658,34 @@ mod tests {
     }
 
     #[test]
+    fn the_verdict_never_disagrees_with_the_findings() {
+        // The bug this pins shut, twice over: a hook wired to a script that has been
+        // deleted is not an *item*, so no item count can see it, and the verdict used to
+        // read "healthy" while doctor reported two broken hooks. Deriving one from the
+        // other makes that impossible rather than merely fixed.
+        let fixture = Fixture::configured();
+        fixture.remove(".agents/hooks/format-on-edit.sh");
+
+        let survey = crate::survey(fixture.path(), &catalogue()).unwrap();
+        assert_eq!(survey.report.counts().broken, 0, "no *item* is broken");
+        assert!(survey
+            .findings
+            .iter()
+            .any(|f| f.severity == crate::Severity::Broken));
+        assert_eq!(survey.state, State::Broken);
+    }
+
+    #[test]
+    fn a_legacy_layout_needs_a_look_rather_than_reading_as_broken() {
+        // It still works: those hooks are wired to where they actually are. Doctor calls
+        // this a warning, and the two verdicts have to agree.
+        let fixture = Fixture::configured();
+        std::fs::create_dir_all(fixture.path().join(".claude/hooks")).unwrap();
+
+        assert_eq!(verdict(&fixture), State::Attention);
+    }
+
+    #[test]
     fn a_dangling_skills_link_makes_the_repo_broken_even_when_every_item_is_fine() {
         let fixture = Fixture::configured();
         // The items all survive - only Claude Code's route to them is cut.
@@ -581,14 +696,12 @@ mod tests {
         let inventory = fixture.inventory();
         let report = classify(&inventory, &catalogue());
         assert_eq!(report.counts().broken, 0);
-        assert_eq!(state(&inventory, &report), State::Broken);
+        assert_eq!(verdict(&fixture), State::Broken);
     }
 
     #[test]
     fn an_untouched_directory_is_unconfigured_rather_than_healthy() {
         let fixture = Fixture::bare();
-        let inventory = fixture.inventory();
-        let report = classify(&inventory, &catalogue());
-        assert_eq!(state(&inventory, &report), State::Unconfigured);
+        assert_eq!(verdict(&fixture), State::Unconfigured);
     }
 }

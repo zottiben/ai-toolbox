@@ -27,6 +27,13 @@ pub enum Error {
         source: toml::de::Error,
     },
 
+    #[error("{path}: {source}")]
+    Db {
+        path: PathBuf,
+        #[source]
+        source: rusqlite::Error,
+    },
+
     #[error("{0}")]
     Catalogue(String),
 }
@@ -48,6 +55,13 @@ impl Error {
 
     pub fn toml(path: impl AsRef<Path>, source: toml::de::Error) -> Error {
         Error::Toml {
+            path: path.as_ref().to_path_buf(),
+            source,
+        }
+    }
+
+    pub fn db(path: impl AsRef<Path>, source: rusqlite::Error) -> Error {
+        Error::Db {
             path: path.as_ref().to_path_buf(),
             source,
         }

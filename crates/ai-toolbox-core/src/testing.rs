@@ -218,6 +218,80 @@ args = ["-y", "@upstash/context7-mcp@latest"]
     }
 }
 
+/// A real git repository with real worktrees.
+///
+/// Nothing here is simulated. The behaviour under test - that `git worktree add` carries
+/// tracked content and leaves everything else behind - is git's, so the tests have to ask
+/// git rather than a model of it.
+pub struct Lab {
+    _temp: tempfile::TempDir,
+    main: PathBuf,
+}
+
+impl Lab {
+    pub fn new() -> Lab {
+        let temp = tempfile::tempdir().expect("a temp dir");
+        let main = temp.path().join("main");
+        std::fs::create_dir_all(&main).unwrap();
+        git(&main, &["init", "-q", "-b", "main", "."]);
+        git(&main, &["config", "user.email", "test@example.com"]);
+        git(&main, &["config", "user.name", "Test"]);
+        std::fs::write(main.join("README.md"), "tracked\n").unwrap();
+        git(&main, &["add", "README.md"]);
+        git(&main, &["commit", "-qm", "init"]);
+        Lab { _temp: temp, main }
+    }
+
+    pub fn main(&self) -> &Path {
+        &self.main
+    }
+
+    pub fn add_worktree(&self, name: &str) -> PathBuf {
+        let path = self.main.parent().expect("the lab root").join(name);
+        git(
+            &self.main,
+            &["worktree", "add", "-q", &path.to_string_lossy(), "-b", name],
+        );
+        path
+    }
+
+    /// Install the toolkit into the main worktree, as a user would.
+    pub fn configure(&self) {
+        let catalogue = catalogue();
+        let plan = crate::install::everything(
+            &self.main,
+            &catalogue,
+            &[crate::Harness::Claude, crate::Harness::Codex],
+            &["format-on-edit".to_string(), "session-context".to_string()],
+            &["context7".to_string()],
+            &["pre-pr".to_string(), "cli/gh".to_string()],
+            true,
+        )
+        .expect("planning a full install");
+        crate::action::apply(&plan.actions).expect("applying it");
+    }
+}
+
+impl Default for Lab {
+    fn default() -> Lab {
+        Lab::new()
+    }
+}
+
+pub fn git(dir: &Path, args: &[&str]) {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .expect("git on PATH");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 fn make_executable(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();

@@ -3,6 +3,8 @@
 # exit 2 blocks the call. Override patterns via GENERATED_GLOBS (pipe-separated regex).
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"; . "$DIR/_lib.sh"
+# shellcheck disable=SC2034  # read by the helpers in _lib.sh, which shellcheck
+# cannot follow through the runtime-computed $DIR above.
 HOOK_JSON=$(cat)
 
 json_have_parser || { echo "protect-generated: needs jq or python3 — guard INACTIVE, install one" >&2; exit 1; }

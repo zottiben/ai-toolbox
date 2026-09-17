@@ -3,6 +3,8 @@
 # Only validates inline -m/--message commits; editor commits pass through. exit 2 blocks.
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"; . "$DIR/_lib.sh"
+# shellcheck disable=SC2034  # read by the helpers in _lib.sh, which shellcheck
+# cannot follow through the runtime-computed $DIR above.
 HOOK_JSON=$(cat)
 
 json_have_parser || { echo "conventional-commit: needs jq or python3 — check INACTIVE, install one" >&2; exit 1; }

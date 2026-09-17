@@ -49,6 +49,7 @@ VAR="${1:-}"
 # headersHelper runs with cwd = the session's working directory (repo root); CLAUDE_PROJECT_DIR
 # may be unset in that environment, so fall back to ./.env.
 [ -n "$ENV_FILE" ] || ENV_FILE="${CLAUDE_PROJECT_DIR:-.}/.env"
+# shellcheck source=/dev/null  # the .env path is chosen at run time - that is the point
 [ -f "$ENV_FILE" ] && { set -a; . "$ENV_FILE"; set +a; }
 
 VAL="${!VAR:-}"

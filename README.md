@@ -42,9 +42,14 @@ below documents one directory — this README is the single doc for the whole re
 
 ```
 ai-toolbox/
-  install.sh           # one-time: puts the `ai-toolbox` command on your PATH
-  bin/ai-toolbox       # the CLI that installs any of the below into a repo (idempotent)
-    lib/                 # its helpers: walkthrough UI + steps, MCP converters, layout migration
+  install/install.sh   # one-time: `curl -fsSL https://zottiben.github.io/ai-toolbox/install.sh | sh`
+  crates/              # the engine, in Rust - one implementation, three front ends
+    ai-toolbox-core/     # catalogue, inventory, classify, doctor, worktrees, install, migrate
+    ai-toolbox-ui/       # the board's server; the frontend bundle is compiled into it
+    ai-toolbox/          # the CLI
+    ai-toolbox-desktop/  # the same board in a window (Tauri)
+  ui/                  # the board's React frontend (dist/ is committed - it is compiled in)
+  bin/ai-toolbox       # a shim over the binary, so a clone still puts the command on PATH
   templates/           # blank, well-structured skeletons you fill in per project
     AGENTS.template.md   # canonical project knowledge (the source of truth)
     CLAUDE.template.md   # thin Claude Code adapter (@AGENTS.md)
@@ -65,41 +70,38 @@ ai-toolbox/
 
 ## Quick start
 
-`ai-toolbox` is a library you pull *from*, not a dependency you install. Clone it
-once and run the installer; the **`ai-toolbox` CLI** then does per-repo setup for
-you — no more hand-copying files or merging JSON. Nothing here is all-or-nothing.
+`ai-toolbox` is a library you pull *from*, not a dependency you install. One line
+installs the command, the board and the catalogue; the **`ai-toolbox` CLI** then does
+per-repo setup for you — no more hand-copying files or merging JSON. Nothing here is
+all-or-nothing.
 
 **Once per machine**
 ```bash
-git clone <this repo> ~/Developer/ai-toolbox && cd ~/Developer/ai-toolbox
-./install.sh                 # puts `ai-toolbox` on your PATH (no manual PATH edits)
+curl -fsSL https://zottiben.github.io/ai-toolbox/install.sh | sh
 ```
-That is it. The symlink points at `bin/ai-toolbox` in the clone, so a `git pull`
-updates the command with no re-install. The other two once-per-machine jobs —
+That is it. It puts the binary on your `PATH`, installs `ai-toolbox.app` on macOS, and
+clones the catalogue to `~/.ai-toolbox/clone` — where a `git pull`, or a hook of your
+own dropped in, changes what the tool offers with no re-install. The other two
+once-per-machine jobs —
 `ai-toolbox base-charter` (the always-on charter into each harness's global config) and
 `ai-toolbox pi-init` (Pi's MCP client package, which its core doesn't ship) — are
-offered by `ai-toolbox setup` below, or you can run them directly.
+offered by the board, or you can run them directly.
 
-**Per repo — start here.** From inside the target repo:
+**Start here.** Open the board:
 ```bash
-ai-toolbox setup    # the guided walkthrough
+ai-toolbox ui       # or ai-toolbox.app, which is the same thing in a window
 ```
-One interview, one plan to approve, nothing written until you do. It picks the
-harnesses (pre-checking the ones you have), offers the once-per-machine bits, folds an
-older per-harness layout into `.agents/` if it finds one, scaffolds the knowledge files,
-installs the MCPs/hooks/skills you confirm, takes any missing MCP tokens straight into
-the repo `.env`, and finishes by telling you exactly how to start each harness. Install
-[charmbracelet/gum](https://github.com/charmbracelet/gum) (`brew install gum`) for the
-full TUI — without it the same walkthrough runs on plain prompts, and
-`AI_TOOLBOX_NO_GUM=1` forces that mode.
+Every repo on this machine, with its state, what it has installed, what is broken and
+whether its worktrees agree. Click a project to set it up, repair it or add to it —
+every button shows you the exact file changes before it makes any of them.
 
 **Which entry point?** They differ only in how much they decide for you:
 
 | | Interactive | Writes knowledge files | Best for |
 |---|---|---|---|
-| `ai-toolbox setup` | full walkthrough | yes (skeletons) | the normal case, and any first run |
-| `ai-toolbox init [--yes]` | four `[Y/n]` prompts | yes (skeletons) | you know what you want; `--yes` for unattended/CI |
-| `ai-toolbox bootstrap [--yes]` | four `[Y/n]` prompts | no | adding tooling to a repo whose `AGENTS.md` already exists |
+| `ai-toolbox ui` | the board | yes (skeletons) | the normal case, and any first run |
+| `ai-toolbox init [--yes]` | one prompt | yes (skeletons) | you know what you want; `--yes` for unattended/CI |
+| `ai-toolbox bootstrap [--yes]` | one prompt | no | adding tooling to a repo whose `AGENTS.md` already exists |
 | `/toolbox-init` (skill) | model interviews you | yes (**authored**, not skeletons) | when you want the model to write `AGENTS.md` properly |
 
 Only the skill actually *authors* `AGENTS.md` — the CLI drops a skeleton for you to fill
@@ -115,7 +117,7 @@ the repo (or add `--repo <path>`):
 
 | Want… | Run | Details |
 |---|---|---|
-| The whole thing, guided | `ai-toolbox setup` | [Quick start](#quick-start) |
+| The whole thing, guided | `ai-toolbox ui` | [Quick start](#quick-start) |
 | Project knowledge | `ai-toolbox init` (or the `/toolbox-init` skill to author by interview) | [Templates](#templates) |
 | To collapse an older layout | `ai-toolbox migrate` (`--dry-run` first) | [What lands in your repo](#what-lands-in-your-repo) |
 | Enforced guardrails | `ai-toolbox hooks` | [Hooks](#hooks) |
@@ -169,29 +171,35 @@ project**, and Pi likewise loads `.agents/skills` only after you trust the proje
 **Coming from an older layout?** `ai-toolbox migrate` folds the per-harness copies into
 `.agents/`, re-points `settings.json` / `config.toml` / `.mcp.json` at them, replaces
 `.claude/skills` with the symlink, and regenerates the Codex tables. It is idempotent,
-and `--dry-run` prints the whole plan first. `ai-toolbox setup` offers it automatically
+and `--dry-run` prints the whole plan first. The board offers it automatically
 when it spots the old shape.
 
 ## The `ai-toolbox` CLI
 
 The deterministic setup engine for the whole toolkit. Instead of hand-copying files
-and merging JSON, you run one idempotent command. It's what `/toolbox-init` calls
-under the hood, and reads the toolbox's own directories at runtime — so
-`ai-toolbox list` never drifts. `bin/ai-toolbox` is the whole CLI; `bin/lib/` holds the
-pieces bash shouldn't do — the walkthrough's UI (`ui.sh`) and steps (`setup.sh`), the
-TOML writer and MCP converters (`codex_toml.py`, `mcp_codex.py`, `mcp_pi.py`), and the
-layout migration (`migrate.py`).
+and merging JSON, you run one idempotent command — and the CLI, the board and the
+desktop app are all the same engine, so none of them can disagree with the others.
 
-**Setup** — from the repo root, `./install.sh` symlinks `ai-toolbox` into a bin dir
-already on your `PATH` (preferring `~/.local/bin`); if none exists it creates
-`~/.local/bin` and adds it to your shell rc. The link points at `bin/ai-toolbox`, so
-`git pull` updates the command. No installer? Run it by path
-(`~/Developer/ai-toolbox/bin/ai-toolbox …`) — it resolves its own location through
-symlinks, and `AI_TOOLBOX` overrides it.
+**Install**
+
+```sh
+curl -fsSL https://zottiben.github.io/ai-toolbox/install.sh | sh
+```
+
+That puts the `ai-toolbox` binary on your `PATH`, installs `ai-toolbox.app` on macOS,
+and clones the **catalogue** to `~/.ai-toolbox/clone`. The catalogue is a git clone on
+purpose: the hooks, presets and skills are read from disk at run time, so `git pull`
+updates what the tool offers and anything you add yourself appears in
+`ai-toolbox list`. Re-run the installer to update both halves. `--from-source` builds
+with cargo instead of downloading a release; `AI_TOOLBOX` overrides where the
+catalogue is read from.
 
 | Command | Does |
 |---|---|
-| `ai-toolbox setup` | The guided walkthrough - pick harnesses, prerequisites, knowledge files, MCPs, hooks, skills, secrets; approve one plan; get per-harness start instructions. |
+| `ai-toolbox ui` | **The board.** Every repo on this machine in one window: what each has installed, what is broken, what its worktrees are missing, and a catalogue you can click. Every button shows the file changes before it makes them. |
+| `ai-toolbox projects` | The same list in the terminal. `projects scan` finds the repos under `~/src`; `projects forget` drops one without touching its files. |
+| `ai-toolbox doctor [--fix]` | What is wrong here, named by consequence rather than symptom. `--fix` repairs what it safely can and never touches a local edit. |
+| `ai-toolbox worktrees [--sync]` | Every worktree against the main one. Nothing this tool writes is tracked by git, so a new worktree starts with none of it; `--sync` copies it across and never deletes. |
 | `ai-toolbox init [--yes\|--dry-run]` | Scaffold `AGENTS.md`/`CLAUDE.md`, then bootstrap the tailored functional layer. The unattended per-repo entry point. |
 | `ai-toolbox bootstrap [--yes\|--dry-run]` | Just the functional layer — detect the stack, show a tailored set, install each group you confirm. |
 | `ai-toolbox recommend` | Print the recommended set for this repo (read-only). |
@@ -205,15 +213,15 @@ symlinks, and `AI_TOOLBOX` overrides it.
 | `ai-toolbox with-dotenv` | Drop the `.env` loader into `.agents/mcp/`. |
 | `ai-toolbox pi-init` | Install `pi-mcp-adapter` globally — Pi's MCP client, which its core does not ship (once per machine). |
 | `ai-toolbox base-charter` | Append the always-on charter to each detected harness's global config — `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.pi/agent/AGENTS.md` (once per machine). |
-| `ai-toolbox help` | The full list. |
+| `ai-toolbox --help` | The full list. |
 
 **Notes.** `--repo <path>` targets another repo (default: current dir).
 `--harness claude|codex|both` picks which harness(es) to write for; by default it
 **auto-detects** which homes exist (`~/.claude`, `~/.codex`, or repo-local
 `.claude`/`.codex`) and installs for those, falling back to Claude when neither is
 present. Every command is idempotent — hooks dedupe, MCP servers overwrite by name,
-`base-charter` is marker-guarded. Merges need `python3` on `PATH` (`tomllib`, 3.11+,
-for Codex TOML; the Codex serializer lives in `bin/lib/`). It writes only the target
+`base-charter` is marker-guarded. `--dry-run` shows the plan and writes nothing, and
+`--json` gives the same answer machine-readably. It writes only the target
 repo's `.claude/` + `.mcp.json` and/or `.codex/` + `.agents/skills/` (and the global
 charter file for `base-charter`); it never writes a real secret. What it *can't* do
 for you: export MCP secrets, complete OAuth (`/mcp` / `codex mcp login`), restart the

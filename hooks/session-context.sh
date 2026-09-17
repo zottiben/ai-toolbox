@@ -4,6 +4,8 @@
 # ${CLAUDE_PROJECT_DIR} (Claude Code), falling back to the current directory.
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"; . "$DIR/_lib.sh"
+# shellcheck disable=SC2034  # read by the helpers in _lib.sh, which shellcheck
+# cannot follow through the runtime-computed $DIR above.
 HOOK_JSON=$(cat 2>/dev/null || true)
 
 proj=$(json_field cwd); : "${proj:=${CLAUDE_PROJECT_DIR:-.}}"
