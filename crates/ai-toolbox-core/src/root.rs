@@ -13,10 +13,17 @@ use crate::error::{Error, Result};
 /// The directories that make a path a toolbox clone rather than any other folder.
 const MARKERS: [&str; 3] = ["hooks", "skills", "mcp/presets"];
 
-/// `$AI_TOOLBOX` if set, else the clone that contains this binary.
+/// Where `install.sh` puts the catalogue for a downloaded binary (D11).
+pub const INSTALLED_CLONE: &str = ".ai-toolbox/clone";
+
+/// The catalogue this binary should read, in the order the candidates should win.
 ///
-/// The env var wins so a developer can point a released binary at a working clone
-/// without reinstalling - the same escape hatch the bash has.
+/// 1. `$AI_TOOLBOX`, so a developer can point a released binary at a working clone.
+/// 2. The clone containing the binary, so running out of a checkout behaves exactly as
+///    it always has.
+/// 3. `~/.ai-toolbox/clone`, which is what makes a `curl | sh` install work: a binary
+///    downloaded from a release has no repo beside it, and the catalogue is read from
+///    disk on purpose (D2).
 pub fn find() -> Result<PathBuf> {
     if let Some(from_env) = std::env::var_os("AI_TOOLBOX") {
         let path = PathBuf::from(from_env);
@@ -29,12 +36,21 @@ pub fn find() -> Result<PathBuf> {
     }
 
     let exe = std::env::current_exe().map_err(|e| Error::io("the running binary", e))?;
-    from_binary(&exe).ok_or_else(|| {
-        Error::Catalogue(format!(
-            "could not find the ai-toolbox clone from {} - set AI_TOOLBOX to its path",
-            exe.display()
-        ))
-    })
+    if let Some(root) = from_binary(&exe) {
+        return Ok(root);
+    }
+    let installed = crate::machine::home().join(INSTALLED_CLONE);
+    if let Some(root) = verify(&installed) {
+        return Ok(root);
+    }
+
+    Err(Error::Catalogue(format!(
+        "no ai-toolbox catalogue found - looked beside {} and in {}. \
+         Reinstall with `curl -fsSL https://zottiben.github.io/ai-toolbox/install.sh | sh`, \
+         or set AI_TOOLBOX to a clone.",
+        exe.display(),
+        installed.display()
+    )))
 }
 
 /// Walk up from a binary looking for the clone.
@@ -108,6 +124,22 @@ mod tests {
             from_binary(&link).unwrap(),
             std::fs::canonicalize(&root).unwrap()
         );
+    }
+
+    #[test]
+    fn a_binary_with_no_clone_beside_it_falls_back_to_the_installed_one() {
+        // The curl-install case: ~/.local/bin/ai-toolbox, catalogue at ~/.ai-toolbox/clone.
+        let home = tempfile::tempdir().unwrap();
+        let clone = home.path().join(INSTALLED_CLONE);
+        clone_at(&clone);
+        let bin = home.path().join(".local/bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join("ai-toolbox"), "").unwrap();
+
+        let found = crate::testing::with_home(home.path(), || {
+            verify(&crate::machine::home().join(INSTALLED_CLONE))
+        });
+        assert_eq!(found.unwrap(), std::fs::canonicalize(&clone).unwrap());
     }
 
     #[test]

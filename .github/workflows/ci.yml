@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  gate:
+    name: gate (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The catalogue's git history is how doctor tells an out-of-date item from one
+          # somebody edited, and a shallow clone has none of it - the stale tests would
+          # pass vacuously.
+          fetch-depth: 0
+
+      # Keep this in sync with rust-toolchain.toml when it is bumped.
+      - uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      # Built before the Rust gates because the bundle is compiled into the binary, and
+      # building it explicitly means a frontend break fails here with npm's own message
+      # rather than silently shipping the "no bundle" apology page.
+      - name: Build the frontend
+        run: npm ci && npm run build
+        working-directory: ui
+
+      - name: Frontend types and tests
+        run: npx tsc --noEmit && npm test
+        working-directory: ui
+
+      - name: Formatting
+        run: cargo fmt --all --check
+
+      - name: Lints
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test
+
+      # The desktop app is out of default-members so the gates above stay quick. It
+      # still has to compile, or a release tag would be the first thing to find out.
+      - name: The desktop app compiles
+        if: matrix.os == 'macos-latest'
+        run: cargo check -p ai-toolbox-desktop
+
+  installer:
+    name: the installer is valid shell
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shellcheck
+        run: shellcheck install/install.sh bin/ai-toolbox hooks/*.sh mcp/*.sh

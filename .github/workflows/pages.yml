@@ -1,0 +1,67 @@
+name: Pages
+
+# Publishes the installer at a stable, curl-friendly URL:
+#   curl -fsSL https://zottiben.github.io/ai-toolbox/install.sh | sh
+on:
+  push:
+    branches: [main]
+    paths:
+      - "install/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          cp install/install.sh _site/
+          cat > _site/index.html <<'HTML'
+          <!doctype html>
+          <html lang="en">
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1">
+          <title>ai-toolbox</title>
+          <style>
+            body { max-width: 42rem; margin: 12vh auto; padding: 0 1.5rem;
+                   font: 17px/1.55 system-ui; color: #202124; }
+            code { background: #f1f3f4; padding: .2rem .4rem; border-radius: .3rem; }
+            a { color: #275bd6; }
+            li { margin: .3rem 0; }
+          </style>
+          <h1>ai-toolbox</h1>
+          <p>Hooks, MCP servers and skills for coding agents - installed, repaired and
+             kept in step across every repo and every worktree on your machine.</p>
+          <p><code>curl -fsSL https://zottiben.github.io/ai-toolbox/install.sh | sh</code></p>
+          <ul>
+            <li><code>ai-toolbox ui</code> - the board: every repo, what it has, what is broken</li>
+            <li><code>ai-toolbox init</code> - detect the stack and set a repo up</li>
+            <li><code>ai-toolbox doctor --fix</code> - repair what can be repaired</li>
+            <li><code>ai-toolbox worktrees --sync</code> - bring every worktree into step</li>
+          </ul>
+          <p><a href="https://github.com/zottiben/ai-toolbox">Source and documentation</a></p>
+          HTML
+          touch _site/.nojekyll
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
