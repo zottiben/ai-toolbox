@@ -1,0 +1,24 @@
+[package]
+name = "ai-toolbox"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Set up the ai-toolbox hooks, MCP servers and skills in a repo."
+
+[[bin]]
+name = "ai-toolbox"
+path = "src/main.rs"
+
+[dependencies]
+ai-toolbox-core = { path = "../ai-toolbox-core" }
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+ai-toolbox-core = { path = "../ai-toolbox-core", features = ["testing"] }
+
+[lints]
+workspace = true

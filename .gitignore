@@ -1,3 +1,6 @@
 # Python bytecode cache (from the bin/lib Codex-config helpers)
 __pycache__/
 *.pyc
+
+# Rust build output. Cargo.lock is committed: this repo ships a binary, not a library.
+/target
