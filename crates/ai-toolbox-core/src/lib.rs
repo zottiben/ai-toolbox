@@ -21,15 +21,19 @@
 //!   and Pi each need.
 //! - [`merge`] adds to files the user also owns, by key, never rewriting the document.
 //! - [`install`] plans, returning [`action::Action`]s that [`action::apply`] performs.
+//! - [`doctor`] names what is broken and plans the repairs, using [`history`] to tell an
+//!   item that is merely out of date from one someone edited here.
 
 pub mod action;
 pub mod catalogue;
 pub mod classify;
 pub mod convert;
 pub mod detect;
+pub mod doctor;
 pub mod error;
 pub mod harness;
 pub mod hash;
+pub mod history;
 pub mod install;
 pub mod inventory;
 pub mod machine;
@@ -44,6 +48,7 @@ pub mod testing;
 pub use action::{apply, Action, Outcome};
 pub use catalogue::Catalogue;
 pub use classify::{classify, state, Kind, Origin, Report, State};
+pub use doctor::{diagnose, Finding, Severity};
 pub use error::{Error, Result};
 pub use harness::Harness;
 pub use install::Plan;

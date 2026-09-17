@@ -55,6 +55,12 @@ fn run() -> anyhow::Result<()> {
             let survey = survey(&repo, &catalogue)?;
             cmd::recommend::run(&survey, cli.json)
         }
+        Command::Doctor { fix } => {
+            let survey = survey(&repo, &catalogue)?;
+            let findings =
+                ai_toolbox_core::diagnose(&repo, &survey.inventory, &survey.report, &catalogue);
+            cmd::doctor::run(&survey, &catalogue, &findings, *fix, cli.dry_run, cli.json)
+        }
 
         Command::Hooks { names } => {
             // No names means all of them, as the bash has always done.

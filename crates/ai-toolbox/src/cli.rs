@@ -47,6 +47,12 @@ pub enum Command {
     List,
     /// What to install here, based on the stack.
     Recommend,
+    /// What is broken here, and optionally put it right.
+    Doctor {
+        /// Repair what can be repaired. Anything that might be your own work is left.
+        #[arg(long)]
+        fix: bool,
+    },
 
     /// Install hook scripts and wire them up. All of them when none is named.
     Hooks { names: Vec<String> },

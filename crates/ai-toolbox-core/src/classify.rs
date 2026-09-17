@@ -5,14 +5,16 @@
 //! type. Every installed item lands in exactly one `Origin`, and `Local` is a perfectly
 //! good place to land: a hand-written skill is a thing people have, not a fault.
 //!
-//! What is *not* here is anything to do with the catalogue's history. Telling a local
-//! edit apart from an item that is simply out of date needs the clone's git log, and
-//! that arrives with the rest of `doctor`.
+//! Telling a local edit apart from an item that is simply out of date needs the clone's
+//! git log, so that question is asked of [`crate::history`] - but only for items that
+//! already differ, which in a healthy repo is none of them. It is asked here rather than
+//! in `doctor` so that one piece of code decides it and every caller agrees.
 
 use std::path::PathBuf;
 
 use crate::catalogue::Catalogue;
 use crate::hash::Hash;
+use crate::history;
 use crate::inventory::{Inventory, SkillsLink};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -20,8 +22,12 @@ use crate::inventory::{Inventory, SkillsLink};
 pub enum Origin {
     /// From the catalogue, unchanged.
     Managed,
-    /// From the catalogue, edited since. Reported, never overwritten without being asked.
+    /// From the catalogue, edited since, and matching no version the catalogue ever
+    /// shipped. Someone's own change. Reported, never overwritten without being asked.
     Modified,
+    /// From the catalogue, and matching a version it *used* to ship. Out of date rather
+    /// than edited, so updating it loses nothing.
+    Stale,
     /// Not in the catalogue at all. Someone's own work.
     Local,
     /// Referenced but not usable.
@@ -34,13 +40,17 @@ impl Origin {
     }
 
     pub fn needs_attention(&self) -> bool {
-        matches!(self, Origin::Modified | Origin::Broken { .. })
+        matches!(
+            self,
+            Origin::Modified | Origin::Stale | Origin::Broken { .. }
+        )
     }
 
     pub fn label(&self) -> &'static str {
         match self {
             Origin::Managed => "managed",
             Origin::Modified => "modified",
+            Origin::Stale => "stale",
             Origin::Local => "local",
             Origin::Broken { .. } => "broken",
         }
@@ -123,6 +133,7 @@ impl Report {
             match item.origin {
                 Origin::Managed => counts.managed += 1,
                 Origin::Modified => counts.modified += 1,
+                Origin::Stale => counts.stale += 1,
                 Origin::Local => counts.local += 1,
                 Origin::Broken { .. } => counts.broken += 1,
             }
@@ -135,13 +146,14 @@ impl Report {
 pub struct Counts {
     pub managed: usize,
     pub modified: usize,
+    pub stale: usize,
     pub local: usize,
     pub broken: usize,
 }
 
 impl Counts {
     pub fn total(&self) -> usize {
-        self.managed + self.modified + self.local + self.broken
+        self.managed + self.modified + self.stale + self.local + self.broken
     }
 }
 
@@ -159,7 +171,7 @@ pub fn classify(inventory: &Inventory, catalogue: &Catalogue) -> Report {
         } else {
             match entry {
                 Some(def) if def.hash == hook.hash => Origin::Managed,
-                Some(_) => Origin::Modified,
+                Some(_) => drifted(catalogue, &format!("hooks/{}.sh", hook.name), &hook.hash),
                 None => Origin::Local,
             }
         };
@@ -178,7 +190,7 @@ pub fn classify(inventory: &Inventory, catalogue: &Catalogue) -> Report {
         let entry = catalogue.skill(&skill.name);
         let origin = match entry {
             Some(def) if def.hash == skill.hash => Origin::Managed,
-            Some(_) => Origin::Modified,
+            Some(def) => drifted(catalogue, &format!("skills/{}", def.key), &skill.hash),
             None => Origin::Local,
         };
         items.push(Item {
@@ -205,7 +217,7 @@ pub fn classify(inventory: &Inventory, catalogue: &Catalogue) -> Report {
         } else {
             match entry {
                 Some(def) if def.hash == helper.hash => Origin::Managed,
-                Some(_) => Origin::Modified,
+                Some(_) => drifted(catalogue, &format!("mcp/{}", helper.name), &helper.hash),
                 None => Origin::Local,
             }
         };
@@ -277,6 +289,19 @@ pub fn classify(inventory: &Inventory, catalogue: &Catalogue) -> Report {
     Report {
         available: available(inventory, catalogue),
         items,
+    }
+}
+
+/// An item that differs from the catalogue: is it out of date, or edited here?
+///
+/// Answered from the clone's git history. Where there is no history to read - a tarball
+/// install, or git missing - every difference reads as `Modified`, which is the safe
+/// direction: it is the one that leaves the file alone and asks a human.
+fn drifted(catalogue: &Catalogue, relative: &str, installed: &Hash) -> Origin {
+    if history::is_former_version(&catalogue.root, relative, installed) {
+        Origin::Stale
+    } else {
+        Origin::Modified
     }
 }
 
@@ -352,7 +377,7 @@ pub fn state(inventory: &Inventory, report: &Report) -> State {
     if counts.broken > 0 || structural_break {
         return State::Broken;
     }
-    if counts.modified > 0 {
+    if counts.modified > 0 || counts.stale > 0 {
         return State::Attention;
     }
     State::Healthy
@@ -388,10 +413,59 @@ mod tests {
             .find(|i| i.name == "format-on-edit")
             .unwrap();
 
+        // No version of the catalogue ever shipped this, so it is an edit, not an
+        // out-of-date copy.
         assert_eq!(hook.origin, Origin::Modified);
         // It still knows where it came from, which is what makes "update it" offerable.
         assert_eq!(hook.catalogue_key.as_deref(), Some("format-on-edit"));
         assert_eq!(state(&fixture.inventory(), &report), State::Attention);
+    }
+
+    #[test]
+    fn an_item_matching_an_older_catalogue_version_is_stale_rather_than_modified() {
+        let fixture = Fixture::configured();
+        let catalogue = catalogue();
+
+        // A real former version of skills/handoff, taken from the clone's own history
+        // rather than invented - an invented one could only ever be Modified.
+        let log = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&catalogue.root)
+            .args(["log", "-n2", "--format=%H", "--", "skills/handoff"])
+            .output()
+            .unwrap();
+        let commits: Vec<String> = String::from_utf8_lossy(&log.stdout)
+            .lines()
+            .map(str::to_string)
+            .collect();
+        assert!(
+            commits.len() >= 2,
+            "handoff must have changed at least once"
+        );
+
+        let body = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&catalogue.root)
+            .arg("show")
+            .arg(format!("{}:skills/handoff/SKILL.md", commits[1]))
+            .output()
+            .unwrap();
+        fixture.write(
+            ".agents/skills/handoff/SKILL.md",
+            &String::from_utf8_lossy(&body.stdout),
+        );
+
+        let inventory = fixture.inventory();
+        let report = classify(&inventory, &catalogue);
+        let skill = report
+            .items_of(Kind::Skill)
+            .into_iter()
+            .find(|i| i.name == "handoff")
+            .unwrap();
+        assert_eq!(skill.origin, Origin::Stale);
+        assert_eq!(report.counts().stale, 1);
+        assert_eq!(report.counts().modified, 0);
+        assert_eq!(state(&inventory, &report), State::Attention);
     }
 
     #[test]

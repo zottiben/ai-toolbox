@@ -47,6 +47,9 @@ pub enum Kind {
     Symlink {
         target: String,
     },
+    /// An empty directory. Needed for one case only: a `.claude/skills` symlink whose
+    /// target was deleted. Recreating the target is what makes the link resolve again.
+    Directory,
     Remove,
 }
 
@@ -123,6 +126,17 @@ impl Action {
             expect: None,
             summary: summary.into(),
             kind: Kind::Symlink { target },
+            path,
+        })
+    }
+
+    pub fn directory(path: impl Into<PathBuf>, summary: impl Into<String>) -> Result<Action> {
+        let path = path.into();
+        Ok(Action {
+            noop: path.is_dir(),
+            expect: None,
+            summary: summary.into(),
+            kind: Kind::Directory,
             path,
         })
     }
@@ -222,6 +236,9 @@ fn perform(action: &Action) -> Result<()> {
             }
             std::os::unix::fs::symlink(target, &action.path)
                 .map_err(|e| Error::io(&action.path, e))?;
+        }
+        Kind::Directory => {
+            std::fs::create_dir_all(&action.path).map_err(|e| Error::io(&action.path, e))?;
         }
         Kind::Remove => {
             if action.path.is_dir() {

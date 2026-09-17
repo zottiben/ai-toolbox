@@ -104,6 +104,12 @@ impl Plan {
         }
     }
 
+    /// The same read a planner does, for the repair paths in [`crate::doctor`] that
+    /// build a Codex config outside this module.
+    pub fn read_toml_public(&self, path: &Path) -> Result<toml::Value> {
+        self.read_toml(path)
+    }
+
     fn read_toml(&self, path: &Path) -> Result<toml::Value> {
         match self.staged(path) {
             Some(bytes) => {

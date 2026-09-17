@@ -86,7 +86,10 @@ fn names(survey: &Survey, kind: Kind) -> Vec<String> {
         .map(|item| match &item.origin {
             // A name on its own reads as fine, so anything that is not gets a mark. This
             // is the difference between status telling you and status reassuring you.
+            // Stale and modified get different marks because they mean opposite things:
+            // one is safe to update, the other is somebody's work.
             Origin::Managed => item.name.clone(),
+            Origin::Stale => out::yellow(&format!("{}~", item.name)),
             Origin::Modified => out::yellow(&format!("{}*", item.name)),
             Origin::Local => out::dim(&format!("{}+", item.name)),
             Origin::Broken { .. } => out::red(&format!("{}!", item.name)),
@@ -156,8 +159,11 @@ fn report_attention(survey: &Survey) {
         let line = format!("{} {}", item.kind.label(), item.name);
         match &item.origin {
             Origin::Broken { why } => out::warn(&format!("{line}: {why}")),
+            Origin::Stale => out::warn(&format!(
+                "{line}: an older version of the catalogue's copy - 'ai-toolbox doctor --fix' updates it"
+            )),
             Origin::Modified => out::warn(&format!(
-                "{line}: edited since it was installed - 'ai-toolbox doctor' shows what changed"
+                "{line}: edited here - 'ai-toolbox doctor' says so, and leaves it alone"
             )),
             _ => {}
         }

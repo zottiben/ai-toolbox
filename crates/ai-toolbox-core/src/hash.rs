@@ -66,7 +66,16 @@ pub fn dir(root: impl AsRef<Path>) -> Result<Hash> {
     collect(root, root, &mut entries)?;
     // Sorted, so the hash does not depend on the order the filesystem hands them back.
     entries.sort();
+    Ok(from_entries(&entries))
+}
 
+/// Combine `(path relative to the root, hash of that file)` pairs into one hash.
+///
+/// Shared with [`crate::history`], which reconstructs the same pairs out of a git tree.
+/// The two have to agree exactly or an item read from history could never match the same
+/// item read from disk - so there is one implementation, not two that look alike.
+/// Entries must already be sorted.
+pub fn from_entries(entries: &[(String, Hash)]) -> Hash {
     let mut hasher = Sha256::new();
     for (relative, digest) in entries {
         hasher.update(relative.as_bytes());
@@ -74,7 +83,7 @@ pub fn dir(root: impl AsRef<Path>) -> Result<Hash> {
         hasher.update(digest.as_str().as_bytes());
         hasher.update([0]);
     }
-    Ok(finish(hasher))
+    finish(hasher)
 }
 
 fn collect(root: &Path, dir: &Path, out: &mut Vec<(String, Hash)>) -> Result<()> {
