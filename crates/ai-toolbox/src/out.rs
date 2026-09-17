@@ -19,6 +19,10 @@ pub fn bold(text: &str) -> String {
     paint("1", text)
 }
 
+pub fn green(text: &str) -> String {
+    paint("32", text)
+}
+
 pub fn yellow(text: &str) -> String {
     paint("33", text)
 }
@@ -33,6 +37,10 @@ fn paint(code: &str, text: &str) -> String {
     } else {
         text.to_string()
     }
+}
+
+pub fn ok(message: &str) {
+    println!("{} {message}", green("✓"));
 }
 
 /// Commentary goes to stderr so that piping a command's output never picks it up.

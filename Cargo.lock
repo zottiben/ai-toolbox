@@ -17,6 +17,7 @@ dependencies = [
 name = "ai-toolbox-core"
 version = "0.1.0"
 dependencies = [
+ "ai-toolbox-core",
  "serde",
  "serde_json",
  "sha2",

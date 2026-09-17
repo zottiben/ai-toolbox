@@ -4,7 +4,6 @@
 //! own hook into the clone and seeing it appear is a feature, not an accident. Nothing
 //! here writes, and nothing here knows about a repo.
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
@@ -38,9 +37,11 @@ pub struct HookDef {
 pub struct PresetDef {
     pub name: String,
     pub path: PathBuf,
-    /// Server name to definition, in file order. Multi-server presets are normal -
+    /// Server name to definition, **in file order**. Multi-server presets are normal -
     /// `supabase-multi-env` ships two - so a preset is never assumed to be one server.
-    pub servers: BTreeMap<String, serde_json::Value>,
+    /// The order is the author's and is preserved all the way into `.mcp.json`: a
+    /// preset that lists staging before prod meant that.
+    pub servers: serde_json::Map<String, serde_json::Value>,
     pub hash: Hash,
     pub secrets: Vec<secrets::Secret>,
 }
@@ -150,11 +151,7 @@ fn load_presets(dir: &Path) -> Result<Vec<PresetDef>> {
         let servers = value
             .get("mcpServers")
             .and_then(|s| s.as_object())
-            .map(|map| {
-                map.iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect::<BTreeMap<_, _>>()
-            })
+            .cloned()
             .ok_or_else(|| Error::Catalogue(format!("{}: no mcpServers object", path.display())))?;
         presets.push(PresetDef {
             name: stem(&path),
@@ -350,11 +347,16 @@ mod tests {
     }
 
     #[test]
-    fn a_multi_server_preset_keeps_both_servers() {
+    fn a_multi_server_preset_keeps_both_servers_in_the_order_it_lists_them() {
         let catalogue = real();
         let preset = catalogue.preset("supabase-multi-env").unwrap();
         assert!(preset.servers.contains_key("supabase-staging"));
         assert!(preset.servers.contains_key("supabase-prod"));
+        // Not alphabetical: the file puts staging first, and that reaches .mcp.json.
+        assert_eq!(
+            preset.servers.keys().collect::<Vec<_>>(),
+            vec!["supabase-staging", "supabase-prod"]
+        );
     }
 
     #[test]

@@ -15,17 +15,25 @@
 //! - [`machine`] covers the once-per-machine facts that are easy to mistake for repo
 //!   state: the global charters, and whether Pi can speak MCP.
 //!
-//! Nothing in this crate writes. Installing, repairing and converging worktrees are
-//! built on top of these reads and land in later slices.
+//! Writing is a second step, never a side effect of asking a question (D3):
+//!
+//! - [`convert`] turns a preset authored once, in Claude Code's shape, into what Codex
+//!   and Pi each need.
+//! - [`merge`] adds to files the user also owns, by key, never rewriting the document.
+//! - [`install`] plans, returning [`action::Action`]s that [`action::apply`] performs.
 
+pub mod action;
 pub mod catalogue;
 pub mod classify;
+pub mod convert;
 pub mod detect;
 pub mod error;
 pub mod harness;
 pub mod hash;
+pub mod install;
 pub mod inventory;
 pub mod machine;
+pub mod merge;
 pub mod paths;
 pub mod root;
 pub mod secrets;
@@ -33,10 +41,12 @@ pub mod secrets;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 
+pub use action::{apply, Action, Outcome};
 pub use catalogue::Catalogue;
 pub use classify::{classify, state, Kind, Origin, Report, State};
 pub use error::{Error, Result};
 pub use harness::Harness;
+pub use install::Plan;
 pub use inventory::Inventory;
 pub use machine::Machine;
 

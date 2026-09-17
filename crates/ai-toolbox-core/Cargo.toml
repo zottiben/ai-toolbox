@@ -20,6 +20,10 @@ thiserror.workspace = true
 toml.workspace = true
 
 [dev-dependencies]
+# Depending on itself with the feature on is what lets tests/ build repo fixtures from
+# the real catalogue - an integration test links the lib as an external crate, so a
+# `#[cfg(test)]` module would not be visible to it.
+ai-toolbox-core = { path = ".", features = ["testing"] }
 tempfile = "3"
 
 [lints]
