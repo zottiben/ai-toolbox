@@ -55,6 +55,10 @@ fn run() -> anyhow::Result<()> {
             let survey = survey(&repo, &catalogue)?;
             cmd::recommend::run(&survey, cli.json)
         }
+        Command::Worktrees { sync } => {
+            let comparison = ai_toolbox_core::worktree::compare(&repo)?;
+            cmd::worktrees::run(&comparison, *sync, cli.dry_run, cli.json)
+        }
         Command::Doctor { fix } => {
             let survey = survey(&repo, &catalogue)?;
             let findings =

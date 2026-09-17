@@ -47,6 +47,12 @@ pub enum Command {
     List,
     /// What to install here, based on the stack.
     Recommend,
+    /// Whether every worktree of this repo is configured the same way.
+    Worktrees {
+        /// Bring the ones that are behind into step with the main worktree.
+        #[arg(long)]
+        sync: bool,
+    },
     /// What is broken here, and optionally put it right.
     Doctor {
         /// Repair what can be repaired. Anything that might be your own work is left.

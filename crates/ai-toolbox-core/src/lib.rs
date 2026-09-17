@@ -23,6 +23,8 @@
 //! - [`install`] plans, returning [`action::Action`]s that [`action::apply`] performs.
 //! - [`doctor`] names what is broken and plans the repairs, using [`history`] to tell an
 //!   item that is merely out of date from one someone edited here.
+//! - [`worktree`] keeps every worktree of a repo configured the same way, which git
+//!   cannot do for it because all of these files are ignored.
 
 pub mod action;
 pub mod catalogue;
@@ -31,6 +33,7 @@ pub mod convert;
 pub mod detect;
 pub mod doctor;
 pub mod error;
+pub mod git;
 pub mod harness;
 pub mod hash;
 pub mod history;
@@ -41,6 +44,7 @@ pub mod merge;
 pub mod paths;
 pub mod root;
 pub mod secrets;
+pub mod worktree;
 
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
@@ -50,6 +54,7 @@ pub use catalogue::Catalogue;
 pub use classify::{classify, state, Kind, Origin, Report, State};
 pub use doctor::{diagnose, Finding, Severity};
 pub use error::{Error, Result};
+pub use git::Worktree;
 pub use harness::Harness;
 pub use install::Plan;
 pub use inventory::Inventory;
