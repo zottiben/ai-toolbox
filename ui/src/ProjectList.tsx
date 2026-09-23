@@ -1,6 +1,14 @@
 import { useMemo, useState } from "react";
 import { api } from "./api";
-import { basename, countsLabel, pluralise, stateLabel, stateTone, tilde } from "./format";
+import {
+  basename,
+  countsLabel,
+  pluralise,
+  problemDetail,
+  stateLabel,
+  stateTone,
+  tilde,
+} from "./format";
 import type { State, Summary } from "./types";
 
 interface Props {
@@ -87,9 +95,13 @@ export function ProjectList({ summaries, selected, onSelect, onScanned }: Props)
               <span className={`badge ${stateTone(summary)}`}>{stateLabel(summary)}</span>
               <span className="path">{tilde(summary.repo.path)}</span>
               <span className="meta">
-                {summary.harnesses.join(" + ") || "no harness"}
-                {countsLabel(summary.counts) && ` · ${countsLabel(summary.counts)}`}
-                {summary.worktrees > 1 && ` · ${pluralise(summary.worktrees, "worktree")}`}
+                {problemDetail(summary) ?? (
+                  <>
+                    {summary.harnesses.join(" + ") || "no harness"}
+                    {countsLabel(summary.counts) && ` · ${countsLabel(summary.counts)}`}
+                    {summary.worktrees > 1 && ` · ${pluralise(summary.worktrees, "worktree")}`}
+                  </>
+                )}
               </span>
             </button>
           </li>

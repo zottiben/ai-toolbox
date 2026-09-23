@@ -54,6 +54,8 @@ export interface Summary {
   stack: string[];
   worktrees: number;
   worktrees_in_step: boolean;
+  /** Why this repo could not be read, when it could not be. Null is the normal case. */
+  problem: string | null;
 }
 
 export interface Finding {

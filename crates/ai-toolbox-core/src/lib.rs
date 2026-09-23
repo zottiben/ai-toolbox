@@ -40,6 +40,7 @@ pub mod hash;
 pub mod history;
 pub mod install;
 pub mod inventory;
+mod jsonc;
 pub mod machine;
 pub mod merge;
 pub mod migrate;

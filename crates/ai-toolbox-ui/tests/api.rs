@@ -7,6 +7,7 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use ai_toolbox_core::registry::Registry;
 use ai_toolbox_core::testing::{self, Fixture};
@@ -21,6 +22,11 @@ struct Board {
 }
 
 /// A server over a temporary registry holding one configured repo.
+///
+/// Every test that uses this needs `#[tokio::test(flavor = "multi_thread")]`. The client
+/// below is deliberately blocking, and the server is a spawned task - on the default
+/// single-threaded runtime they share one thread, so the blocked client starves the
+/// server it is waiting for.
 async fn board() -> Board {
     let fixture = Fixture::configured();
     let repo = fixture.path().to_path_buf();
@@ -69,6 +75,12 @@ impl Board {
         token: bool,
     ) -> (u16, String) {
         let mut stream = TcpStream::connect(&self.addr).expect("connecting to the board");
+        // Far longer than a loopback request can legitimately take, and the difference
+        // between a test that fails in ten seconds saying why and one that hangs until
+        // somebody kills it.
+        let limit = Some(Duration::from_secs(10));
+        stream.set_read_timeout(limit).expect("a read timeout");
+        stream.set_write_timeout(limit).expect("a write timeout");
         let body = body.unwrap_or_default();
         let mut request = format!(
             "{method} {path} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n",
@@ -92,7 +104,12 @@ impl Board {
 
         let mut reader = BufReader::new(stream);
         let mut status_line = String::new();
-        reader.read_line(&mut status_line).expect("a status line");
+        reader.read_line(&mut status_line).unwrap_or_else(|e| {
+            panic!(
+                "no reply from the board ({e}). A #[tokio::test] without \
+                 `flavor = \"multi_thread\"` deadlocks exactly here - see `board`."
+            )
+        });
         let status: u16 = status_line
             .split_whitespace()
             .nth(1)
@@ -152,6 +169,51 @@ async fn the_project_list_reports_the_state_of_each_repo() {
     assert_eq!(list.len(), 1);
     assert_eq!(list[0]["state"], "healthy");
     assert!(list[0]["counts"]["managed"].as_u64().unwrap() > 0);
+    assert!(
+        list[0]["problem"].is_null(),
+        "a healthy repo has no problem"
+    );
+}
+
+/// The board used to render nothing at all - "The board could not start" - when any one
+/// repo held a config it could not parse. One repo's breakage is one repo's row.
+#[tokio::test(flavor = "multi_thread")]
+async fn one_unreadable_repo_does_not_take_the_whole_list_down() {
+    let board = board().await;
+    let root = tempfile::tempdir().unwrap();
+    let broken = root.path().join("broken");
+    std::fs::create_dir_all(&broken).unwrap();
+    testing::git(&broken, &["init", "-q", "-b", "main", "."]);
+    std::fs::write(broken.join(".mcp.json"), "{ not json").unwrap();
+
+    board.post_json(
+        "/api/projects/scan",
+        serde_json::json!({ "roots": [root.path()] }),
+    );
+
+    let (status, _) = board.get("/api/projects");
+    assert_eq!(status, 200, "the list must still render");
+
+    let projects = board.json("/api/projects");
+    let list = projects.as_array().unwrap();
+    assert_eq!(list.len(), 2);
+
+    let row = list
+        .iter()
+        .find(|p| p["repo"]["path"].as_str().unwrap().ends_with("broken"))
+        .expect("the unreadable repo still has a row");
+    assert_eq!(row["state"], "broken");
+    assert!(
+        row["problem"].as_str().unwrap().contains(".mcp.json"),
+        "the row says what is wrong: {row}"
+    );
+
+    // And the healthy repo beside it is unaffected.
+    let healthy = list
+        .iter()
+        .find(|p| p["state"] == "healthy")
+        .expect("the fixture");
+    assert!(healthy["problem"].is_null());
 }
 
 #[tokio::test(flavor = "multi_thread")]

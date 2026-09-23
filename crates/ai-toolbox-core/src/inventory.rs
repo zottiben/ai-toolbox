@@ -602,6 +602,30 @@ mod tests {
     }
 
     #[test]
+    fn a_config_with_comments_is_read_rather_than_refused() {
+        // Hand-edited agent configs carry `//` notes explaining why an override exists.
+        // Pi reads them; refusing to would make the repo unreadable over a comment.
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(repo.path().join(".pi")).unwrap();
+        std::fs::write(
+            repo.path().join(".pi/mcp.json"),
+            "{\n  \"mcpServers\": {\n    // pi needs the bearer header claude sets another way\n    \"pixellab\": { \"url\": \"https://example.com/mcp\" },\n  }\n}\n",
+        )
+        .unwrap();
+
+        let inventory = Inventory::read(repo.path()).unwrap();
+        assert_eq!(
+            inventory
+                .pi
+                .overrides
+                .iter()
+                .map(|s| s.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["pixellab"]
+        );
+    }
+
+    #[test]
     fn a_hook_without_its_executable_bit_is_reported_as_such() {
         use std::os::unix::fs::PermissionsExt;
         let fixture = Fixture::configured();

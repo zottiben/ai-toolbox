@@ -43,10 +43,10 @@ async fn catalogue(State(state): State<AppState>) -> Result<Json<ai_toolbox_core
 async fn projects(State(state): State<AppState>) -> Result<Json<Vec<Summary>>> {
     let catalogue = state.catalogue()?;
     let repos = state.registry(|registry| Ok(registry.all()?))?;
-    let summaries = repos
+    let summaries: Vec<Summary> = repos
         .iter()
         .map(|repo| registry::summarise(repo, &catalogue))
-        .collect::<ai_toolbox_core::Result<Vec<_>>>()?;
+        .collect();
     Ok(Json(summaries))
 }
 

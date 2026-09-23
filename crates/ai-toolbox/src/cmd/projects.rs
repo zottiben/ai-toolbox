@@ -13,7 +13,7 @@ pub fn list(registry: &Registry, catalogue: &Catalogue, json: bool) -> anyhow::R
     let summaries: Vec<Summary> = repos
         .iter()
         .map(|repo| registry::summarise(repo, catalogue))
-        .collect::<ai_toolbox_core::Result<_>>()?;
+        .collect();
 
     if json {
         println!("{}", serde_json::to_string_pretty(&summaries)?);
@@ -56,21 +56,33 @@ pub fn list(registry: &Registry, catalogue: &Catalogue, json: bool) -> anyhow::R
 
     println!();
     if broken > 0 {
+        let needs = agrees(broken, "needs", "need");
         out::info(&format!(
-            "{broken} need repair: ai-toolbox doctor --repo <path> --fix"
+            "{broken} {needs} repair: ai-toolbox doctor --repo <path> --fix"
         ));
     }
     if drifted > 0 {
+        let has = agrees(drifted, "has", "have");
         out::info(&format!(
-            "{drifted} have worktrees out of step: ai-toolbox worktrees --repo <path> --sync"
+            "{drifted} {has} worktrees out of step: ai-toolbox worktrees --repo <path> --sync"
         ));
     }
     if unconfigured > 0 {
+        let is = agrees(unconfigured, "is", "are");
         out::info(&format!(
-            "{unconfigured} are not set up: ai-toolbox init --repo <path>"
+            "{unconfigured} {is} not set up: ai-toolbox init --repo <path>"
         ));
     }
     Ok(())
+}
+
+/// The verb for a count, so a list of one does not read "1 are not set up".
+fn agrees(count: usize, one: &'static str, many: &'static str) -> &'static str {
+    if count == 1 {
+        one
+    } else {
+        many
+    }
 }
 
 pub fn scan(registry: &mut Registry, roots: &[PathBuf], json: bool) -> anyhow::Result<()> {
@@ -174,6 +186,13 @@ fn state(summary: &Summary) -> String {
 fn detail(summary: &Summary) -> String {
     if !summary.exists {
         return out::dim(&summary.repo.path.display().to_string());
+    }
+    // A repo that could not be read says why. "broken" with no reason is not something
+    // anybody can act on. The repo is named in the column to the left, so the error's
+    // copy of its path is dropped and the file and the fault are what is left.
+    if let Some(problem) = &summary.problem {
+        let prefix = format!("{}/", summary.repo.path.display());
+        return out::dim(problem.strip_prefix(&prefix).unwrap_or(problem));
     }
     let mut parts = Vec::new();
 

@@ -64,6 +64,18 @@ export function App() {
         <main className="detail empty">
           {projects.loading ? (
             <p className="muted">Reading the repos on this machine…</p>
+          ) : selected !== null && project.error ? (
+            // A repo the survey cannot read still has a row in the list, so opening it
+            // has to say why. Falling through to "Pick a project" looks like the click
+            // did nothing.
+            <>
+              <h1>This project could not be read</h1>
+              <p className="bad">{project.error}</p>
+              <p className="muted">
+                Fix what the message names and it will appear here - everything is read
+                off disk, so nothing needs clearing first.
+              </p>
+            </>
           ) : (
             <>
               <h1>Pick a project</h1>

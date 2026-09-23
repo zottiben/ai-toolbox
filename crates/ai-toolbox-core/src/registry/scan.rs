@@ -17,10 +17,12 @@ use crate::error::Result;
 
 /// Directories that never contain a repo worth registering, and do contain enormous
 /// numbers of files. `.git` is here because descending into one finds its internals, not
-/// a project.
-const SKIP: [&str; 12] = [
+/// a project. `custom_nodes` is ComfyUI's dependency directory, and its contents are
+/// clones of other people's projects in exactly the way `node_modules` is.
+const SKIP: [&str; 13] = [
     ".git",
     "node_modules",
+    "custom_nodes",
     "target",
     "vendor",
     "dist",
@@ -228,6 +230,18 @@ mod tests {
         let mut found = Vec::new();
         walk(root.path(), 0, 4, &mut found);
         assert_eq!(found, vec![outer]);
+    }
+
+    #[test]
+    fn a_comfyui_custom_node_is_a_dependency_rather_than_a_project() {
+        let root = tempfile::tempdir().unwrap();
+        repo_at(&root.path().join("ComfyUI/custom_nodes/ComfyUI-RMBG"));
+        let comfy = root.path().join("ComfyUI");
+        repo_at(&comfy);
+
+        let mut found = Vec::new();
+        walk(root.path(), 0, 4, &mut found);
+        assert_eq!(found, vec![comfy], "only ComfyUI itself is a project");
     }
 
     #[test]

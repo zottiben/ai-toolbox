@@ -146,6 +146,51 @@ fn a_hand_written_server_and_hook_survive_the_install() {
     );
 }
 
+/// A merge re-serialises the document, so a config with comments in it is refused rather
+/// than rewritten without them. Reading the same file still works - only the write is
+/// strict, because only the write can destroy something.
+#[test]
+fn a_merge_refuses_to_delete_the_comments_in_a_hand_written_config() {
+    let catalogue = testing::catalogue();
+    let temp = tempfile::tempdir().unwrap();
+    let repo = seeded(temp.path().join("repo"));
+    let mcp = repo.join(".mcp.json");
+    let commented = format!(
+        "{{\n  // our-internal is wired by hand, do not replace it\n{}",
+        &EXISTING_MCP[2..]
+    );
+    std::fs::write(&mcp, &commented).unwrap();
+
+    let error = install::everything(
+        &repo,
+        &catalogue,
+        &HARNESSES,
+        &[],
+        &["context7".to_string()],
+        &[],
+        false,
+    )
+    .unwrap_err();
+
+    assert!(
+        matches!(error, ai_toolbox_core::Error::JsonComments { .. }),
+        "got {error:?}"
+    );
+    assert!(
+        error.to_string().contains("Remove them"),
+        "the error should say what to do: {error}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&mcp).unwrap(),
+        commented,
+        "a refused merge must leave the file exactly as it was"
+    );
+
+    // The same file is still readable - a comment stops a rewrite, not an inspection.
+    let inventory = ai_toolbox_core::inventory::Inventory::read(&repo).unwrap();
+    assert!(inventory.servers.iter().any(|s| s.name == "our-internal"));
+}
+
 fn seeded(repo: PathBuf) -> PathBuf {
     std::fs::create_dir_all(repo.join(".claude")).unwrap();
     std::fs::write(repo.join(".mcp.json"), EXISTING_MCP).unwrap();

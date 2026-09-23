@@ -4,11 +4,35 @@ import {
   describeFiles,
   originLabel,
   originTone,
+  problemDetail,
   stateLabel,
   stateTone,
   summarise,
   tilde,
 } from "./format";
+
+describe("problemDetail", () => {
+  const repo = { path: "/Users/me/src/thing" };
+
+  it("drops the repo path the row already shows", () => {
+    expect(
+      problemDetail({
+        repo,
+        problem: "/Users/me/src/thing/.mcp.json: key must be a string at line 6 column 5",
+      } as never),
+    ).toBe(".mcp.json: key must be a string at line 6 column 5");
+  });
+
+  it("leaves a message that is not about a file in the repo alone", () => {
+    expect(problemDetail({ repo, problem: "not a git repository" } as never)).toBe(
+      "not a git repository",
+    );
+  });
+
+  it("is null when there is no problem", () => {
+    expect(problemDetail({ repo, problem: null } as never)).toBeNull();
+  });
+});
 
 describe("stateLabel", () => {
   const base = { state: "healthy", exists: true, worktrees_in_step: true } as const;

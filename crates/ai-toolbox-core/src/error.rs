@@ -20,6 +20,12 @@ pub enum Error {
         source: serde_json::Error,
     },
 
+    /// Reading a config with comments in it is fine - see [`crate::jsonc`]. Merging into
+    /// one is not, because a merge re-serialises the whole document and would drop every
+    /// comment it contains.
+    #[error("{path}: has comments, which a merge would delete. Remove them, or make this change by hand.")]
+    JsonComments { path: PathBuf },
+
     #[error("{path}: {source}")]
     Toml {
         path: PathBuf,
@@ -50,6 +56,12 @@ impl Error {
         Error::Json {
             path: path.as_ref().to_path_buf(),
             source,
+        }
+    }
+
+    pub fn json_comments(path: impl AsRef<Path>) -> Error {
+        Error::JsonComments {
+            path: path.as_ref().to_path_buf(),
         }
     }
 

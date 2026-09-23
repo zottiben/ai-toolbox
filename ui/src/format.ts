@@ -16,6 +16,19 @@ export function basename(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
+/** Why a repo could not be read, with its own path taken off the front.
+ *
+ * The error names the file in full, and the row above it already says where the repo is -
+ * left whole, the two lines truncate to the same prefix and the part that matters, which
+ * file and what is wrong with it, is the part that gets cut off. */
+export function problemDetail(summary: Pick<Summary, "repo" | "problem">): string | null {
+  if (!summary.problem) return null;
+  const prefix = `${summary.repo.path}/`;
+  return summary.problem.startsWith(prefix)
+    ? summary.problem.slice(prefix.length)
+    : summary.problem;
+}
+
 export function stateLabel(summary: Pick<Summary, "state" | "exists" | "worktrees_in_step">): string {
   if (!summary.exists) return "gone from disk";
   // A healthy repo whose worktrees disagree is not healthy in the way that matters -

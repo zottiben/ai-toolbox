@@ -240,26 +240,32 @@ pub struct Summary {
     /// is a repo where half your branches have no hooks.
     pub worktrees: usize,
     pub worktrees_in_step: bool,
+    /// Why this repo could not be read, when it could not be. `None` is the normal case;
+    /// `Some` is a row that says what is wrong instead of a list that refuses to render.
+    pub problem: Option<String>,
 }
 
-pub fn summarise(repo: &Repo, catalogue: &Catalogue) -> Result<Summary> {
+/// One repo's row, which is always produced.
+///
+/// A repo that cannot be read becomes a row saying so rather than an error, because the
+/// list is how you find out a repo is broken - and a single unparseable config taking the
+/// other twenty repos down with it is the failure this tool is supposed to catch, not
+/// commit.
+pub fn summarise(repo: &Repo, catalogue: &Catalogue) -> Summary {
     if !repo.exists() {
-        return Ok(Summary {
-            repo: repo.clone(),
-            exists: false,
-            state: State::Unconfigured,
-            harnesses: Vec::new(),
-            counts: classify::Counts::default(),
-            stack: Vec::new(),
-            worktrees: 0,
-            worktrees_in_step: true,
-        });
+        return without_survey(repo, false, State::Unconfigured, None);
     }
     // The same survey the detail view runs, so a repo cannot read one way in the list
     // and another way when it is opened.
-    let survey = crate::survey(&repo.path, catalogue)?;
-    let comparison = worktree::compare(&repo.path)?;
-    Ok(Summary {
+    let survey = match crate::survey(&repo.path, catalogue) {
+        Ok(survey) => survey,
+        Err(error) => return without_survey(repo, true, State::Broken, Some(error.to_string())),
+    };
+    let comparison = match worktree::compare(&repo.path) {
+        Ok(comparison) => comparison,
+        Err(error) => return without_survey(repo, true, State::Broken, Some(error.to_string())),
+    };
+    Summary {
         state: survey.state,
         harnesses: survey.harnesses,
         counts: survey.report.counts(),
@@ -268,7 +274,23 @@ pub fn summarise(repo: &Repo, catalogue: &Catalogue) -> Result<Summary> {
         worktrees_in_step: comparison.is_uniform(),
         exists: true,
         repo: repo.clone(),
-    })
+        problem: None,
+    }
+}
+
+/// A row for a repo there is nothing to survey in - gone from disk, or unreadable.
+fn without_survey(repo: &Repo, exists: bool, state: State, problem: Option<String>) -> Summary {
+    Summary {
+        repo: repo.clone(),
+        exists,
+        state,
+        harnesses: Vec::new(),
+        counts: classify::Counts::default(),
+        stack: Vec::new(),
+        worktrees: 0,
+        worktrees_in_step: true,
+        problem,
+    }
 }
 
 pub(crate) fn now() -> String {
@@ -401,14 +423,33 @@ mod tests {
         let repo = registry.record(fixture.path(), true).unwrap();
 
         let catalogue = crate::testing::catalogue();
-        let before = summarise(&repo, &catalogue).unwrap();
+        let before = summarise(&repo, &catalogue);
         assert_eq!(before.state, State::Healthy);
 
         // An agent breaks the repo. The registry knows nothing about it, and that is the
         // point: the summary is a fresh read, so it notices.
         fixture.remove(".agents/skills");
-        let after = summarise(&repo, &catalogue).unwrap();
+        let after = summarise(&repo, &catalogue);
         assert_eq!(after.state, State::Broken);
+    }
+
+    #[test]
+    fn a_repo_whose_config_cannot_be_parsed_is_one_broken_row_not_a_failed_list() {
+        let temp = tempfile::tempdir().unwrap();
+        let unreadable = temp.path().join("unreadable");
+        std::fs::create_dir_all(&unreadable).unwrap();
+        std::fs::write(unreadable.join(".mcp.json"), "{ not json").unwrap();
+        let mut registry = Registry::memory().unwrap();
+        let repo = registry.record(&unreadable, true).unwrap();
+
+        let summary = summarise(&repo, &crate::testing::catalogue());
+        assert_eq!(summary.state, State::Broken);
+        assert!(
+            summary.exists,
+            "the directory is there, its config is not readable"
+        );
+        let problem = summary.problem.expect("a broken row says what is wrong");
+        assert!(problem.contains(".mcp.json"), "got {problem}");
     }
 
     #[test]
@@ -420,7 +461,7 @@ mod tests {
         let repo = registry.record(&gone, true).unwrap();
         std::fs::remove_dir_all(&gone).unwrap();
 
-        let summary = summarise(&repo, &crate::testing::catalogue()).unwrap();
+        let summary = summarise(&repo, &crate::testing::catalogue());
         assert!(!summary.exists);
     }
 }

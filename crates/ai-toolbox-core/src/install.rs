@@ -643,11 +643,22 @@ fn read_json_or_empty(path: &Path) -> Result<Value> {
     parse_json(path, &text)
 }
 
+/// Stricter than the read in [`crate::catalogue`], and deliberately so.
+///
+/// Everything parsed here is about to be merged into and written back, and the write
+/// re-serialises the whole document - so a comment that went in would not come out.
+/// [`crate::merge`] exists to leave the parts of a file nobody asked about alone, and
+/// quietly deleting somebody's notes is the loudest way to break that. A trailing comma
+/// carries no such meaning, so it is normalised away without comment.
 fn parse_json(path: &Path, text: &str) -> Result<Value> {
     if text.trim().is_empty() {
         return Ok(Value::Object(Map::new()));
     }
-    serde_json::from_str(text).map_err(|e| Error::json(path, e))
+    let stripped = crate::jsonc::strip(text);
+    if stripped.had_comments {
+        return Err(Error::json_comments(path));
+    }
+    serde_json::from_str(&stripped.text).map_err(|e| Error::json(path, e))
 }
 
 fn read_toml_or_empty(path: &Path) -> Result<toml::Value> {

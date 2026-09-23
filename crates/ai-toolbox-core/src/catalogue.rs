@@ -271,9 +271,14 @@ fn file_name(path: &Path) -> String {
         .into_owned()
 }
 
+/// Read a config file that somebody may have hand-edited.
+///
+/// Comments and trailing commas are tolerated because the agents that own these files
+/// tolerate them. This is the reading half only - see [`crate::install`] for why a merge
+/// about to rewrite the same file is stricter.
 pub(crate) fn read_json(path: &Path) -> Result<serde_json::Value> {
     let text = std::fs::read_to_string(path).map_err(|e| Error::io(path, e))?;
-    serde_json::from_str(&text).map_err(|e| Error::json(path, e))
+    serde_json::from_str(&crate::jsonc::strip(&text).text).map_err(|e| Error::json(path, e))
 }
 
 /// The first `#` comment line after the shebang, which is how every shipped hook
