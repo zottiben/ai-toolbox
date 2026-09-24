@@ -61,7 +61,7 @@ ai-toolbox/
     rules/               # rule snippets by stack (unity, go, react, expo, supabase, bun, …)
     agents/              # generic agent starters + an authoring template
   skills/              # the tooling (portable playbooks + thin harness adapters)
-    init/ capture/ lint/ pre-pr/ audit/ babysit-pr/ screen-record-demo/ cli/
+    init/ capture/ lint/ agile-plan/ pre-pr/ audit/ babysit-pr/ screen-record-demo/ cli/
   mcp/                 # capability layer — registry, template, presets/ (ready configs)
   hooks/               # functional guardrails — shell hooks that ENFORCE the AGENTS.md rules
   background/          # recurring/unattended automation — /loop & /goal guide, babysit-pr, GH Action
