@@ -1,7 +1,7 @@
 {
   "name": "ai-toolbox-ui",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "The board. Built to static assets and embedded in the ai-toolbox binary.",
   "scripts": {
