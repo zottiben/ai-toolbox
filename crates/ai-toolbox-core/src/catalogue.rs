@@ -317,13 +317,21 @@ fn frontmatter_field(text: &str, field: &str) -> Option<String> {
     let first = lines.next()?;
     let mut value = first.split_once(':')?.1.trim().to_string();
 
+    // `description: >` (or `|`, either with a chomping indicator) says the text starts on
+    // the continuation lines below. The indicator is syntax, not the first word.
+    if matches!(value.as_str(), ">" | "|" | ">-" | "|-" | ">+" | "|+") {
+        value.clear();
+    }
+
     // A wrapped description continues on indented lines until the next `key:` at the
     // left margin.
     for line in lines {
         if line.is_empty() || !line.starts_with(char::is_whitespace) {
             break;
         }
-        value.push(' ');
+        if !value.is_empty() {
+            value.push(' ');
+        }
         value.push_str(line.trim());
     }
 
@@ -402,6 +410,33 @@ mod tests {
             Some("first part and the rest of it")
         );
         assert_eq!(frontmatter_field(text, "model").as_deref(), Some("y"));
+    }
+
+    /// `description: >` is how the vendored typesafe-ai skill wraps its description, and
+    /// the indicator is YAML syntax rather than the first word of the text.
+    #[test]
+    fn a_block_scalar_description_drops_its_yaml_indicator() {
+        for indicator in [">", "|", ">-", "|-", ">+", "|+"] {
+            let text = format!(
+                "---\nname: x\ndescription: {indicator}\n  first part\n  and the rest of it\nmodel: y\n---\n\nbody\n"
+            );
+            assert_eq!(
+                frontmatter_field(&text, "description").as_deref(),
+                Some("first part and the rest of it"),
+                "indicator {indicator}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_vendored_skill_describes_itself_without_leaking_yaml_syntax() {
+        let catalogue = real();
+        let skill = catalogue.skill("typesafe-ai").unwrap();
+        let description = skill.description.as_deref().unwrap();
+        assert!(
+            description.starts_with("Build AI-powered software with TypeSafe"),
+            "got: {description}"
+        );
     }
 
     #[test]
