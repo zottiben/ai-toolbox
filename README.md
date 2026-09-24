@@ -61,7 +61,7 @@ ai-toolbox/
     rules/               # rule snippets by stack (unity, go, react, expo, supabase, bun, …)
     agents/              # generic agent starters + an authoring template
   skills/              # the tooling (portable playbooks + thin harness adapters)
-    init/ capture/ lint/ pre-pr/ audit/ babysit-pr/ screen-record-demo/ cli/
+    init/ capture/ lint/ agile-plan/ pre-pr/ audit/ babysit-pr/ screen-record-demo/ cli/
   mcp/                 # capability layer — registry, template, presets/ (ready configs)
   hooks/               # functional guardrails — shell hooks that ENFORCE the AGENTS.md rules
   background/          # recurring/unattended automation — /loop & /goal guide, babysit-pr, GH Action
@@ -319,6 +319,7 @@ Each becomes a `/slash-command` and is auto-selected by its `description`.
 | `lint` | health-check a knowledge file for drift/bloat |
 | `slim` | debloat a bloated `AGENTS.md` — extract procedural content into its own skill, condense verbose rules (losing no constraint), relocate misplaced content to its right home. The fix for what `lint` diagnoses |
 | `handoff` | checkpoint before you clear/compact the context — commit + push + certify green + refresh a committed `HANDOFF.md` so a fresh session resumes exactly where you left off |
+| `agile-plan` | plan like a product and engineering team - outcome grounded in the code, one user story per PR with acceptance criteria and a demo, tasks with an owner, stacked only where a story needs an earlier one's code |
 | `pre-pr` | run the project's real checks + native review before you push |
 | `audit` | self-audit the whole toolbox for drift |
 | `babysit-pr` | shepherd a PR to green, triaging each item |
