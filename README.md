@@ -61,7 +61,8 @@ ai-toolbox/
     rules/               # rule snippets by stack (unity, go, react, expo, supabase, bun, …)
     agents/              # generic agent starters + an authoring template
   skills/              # the tooling (portable playbooks + thin harness adapters)
-    init/ capture/ lint/ agile-plan/ pre-pr/ audit/ babysit-pr/ screen-record-demo/ cli/
+    init/ capture/ lint/ agile-plan/ pre-pr/ audit/ babysit-pr/ screen-record-demo/
+    jev-agents/ typesafe-ai/ (vendored) cli/
   mcp/                 # capability layer — registry, template, presets/ (ready configs)
   hooks/               # functional guardrails — shell hooks that ENFORCE the AGENTS.md rules
   background/          # recurring/unattended automation — /loop & /goal guide, babysit-pr, GH Action
@@ -324,6 +325,8 @@ Each becomes a `/slash-command` and is auto-selected by its `description`.
 | `audit` | self-audit the whole toolbox for drift |
 | `babysit-pr` | shepherd a PR to green, triaging each item |
 | `screen-record-demo` | record a short demo of a running web UI — drives the page over CDP with a synthetic cursor, captures the viewport (agent browsers are headless, so `screencapture` sees nothing), converts to mp4 without ffmpeg, verifies the file actually captured |
+| `jev-agents` | build agents and harnesses on Jev, TypeSafe's System One model - model routers, tool-call gates, autonomous decision loops, RAG passage filters. Carries the verified request/response contract (`reference.md`) and four worked shapes (`recipes.md`) so the integration isn't invented |
+| `typesafe-ai` | TypeSafe's **official** skill, vendored verbatim from [typesafe-ai/skills](https://github.com/typesafe-ai/skills) (MIT). Covers the API surface and the live cookbook index; pairs with `jev-agents`, which covers the architecture on top. See `skills/typesafe-ai/UPSTREAM.md` for the pinned commit and the refresh command - never hand-edit the vendored files |
 | `cli/*` | CLI-wrapper skills — `fly`, `gh`, `supabase`, `eas`, `aws` |
 
 `SKILL.md` (`name` + `description` frontmatter) is a **cross-agent standard** — the
