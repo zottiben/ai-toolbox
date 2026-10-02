@@ -115,6 +115,13 @@ pub enum Command {
     /// Install Pi's MCP client. Once per machine.
     PiInit,
 
+    /// Update ai-toolbox itself to the latest stable release.
+    Update {
+        /// Check for a release without downloading or installing it.
+        #[arg(long)]
+        check: bool,
+    },
+
     /// Open the board: every repo on this machine, in one window.
     Ui {
         /// 0 asks the OS for a free port, so two boards never fight over a number.

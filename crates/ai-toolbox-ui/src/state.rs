@@ -25,6 +25,8 @@ pub struct AppState {
     /// for changes - watching every registered repo would mean stat-walking seventeen
     /// trees on a timer to keep one panel fresh.
     watched: Arc<Mutex<HashMap<PathBuf, usize>>>,
+    /// Serialise updates across tabs and remember completion until this process exits.
+    pub(crate) update: Arc<Mutex<Option<ai_toolbox_core::update::Updated>>>,
 }
 
 /// What the board is told. Deliberately thin: the client refetches, so the message only
@@ -49,6 +51,7 @@ impl AppState {
             token: token.into(),
             changes,
             watched: Arc::new(Mutex::new(HashMap::new())),
+            update: Arc::new(Mutex::new(None)),
         }
     }
 

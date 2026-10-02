@@ -48,6 +48,7 @@ pub mod paths;
 pub mod registry;
 pub mod root;
 pub mod secrets;
+pub mod update;
 pub mod worktree;
 
 #[cfg(any(test, feature = "testing"))]

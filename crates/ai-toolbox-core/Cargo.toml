@@ -9,10 +9,12 @@ description = "Reads the ai-toolbox catalogue and what a repo has installed from
 [features]
 # Lets the CLI's and the server's own tests build repo fixtures from the real
 # catalogue, instead of each crate growing its own copy of the same setup code.
-testing = ["dep:tempfile"]
+testing = []
 
 [dependencies]
-tempfile = { version = "3", optional = true }
+tempfile = "3"
+anyhow.workspace = true
+semver = "1"
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true

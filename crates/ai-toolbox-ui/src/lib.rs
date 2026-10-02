@@ -15,6 +15,7 @@ mod error;
 mod events;
 mod read;
 mod state;
+mod update;
 mod write;
 
 use std::net::{Ipv4Addr, SocketAddr};
@@ -77,6 +78,7 @@ impl Server {
         let api = read::routes()
             .merge(write::routes())
             .merge(events::routes())
+            .merge(update::routes())
             .route_layer(axum::middleware::from_fn_with_state(
                 state.clone(),
                 auth::require_token,

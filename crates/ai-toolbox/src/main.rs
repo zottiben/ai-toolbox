@@ -29,6 +29,10 @@ fn main() {
 
 fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    // Self-update must work even if the catalogue is absent or this is not a repo.
+    if let Command::Update { check } = &cli.command {
+        return cmd::update::run(*check || cli.dry_run, cli.json);
+    }
     let catalogue = Catalogue::load(root::find()?)?;
     let options = Options {
         dry_run: cli.dry_run,
@@ -51,7 +55,8 @@ fn run() -> anyhow::Result<()> {
     remember(&cli, &repo);
 
     match &cli.command {
-        Command::List
+        Command::Update { .. }
+        | Command::List
         | Command::Rules { .. }
         | Command::PiInit
         | Command::Projects { .. }
@@ -258,7 +263,8 @@ fn writes(command: &Command) -> bool {
         | Command::Migrate => true,
         Command::Doctor { fix } => *fix,
         Command::Worktrees { sync } => *sync,
-        Command::Status
+        Command::Update { .. }
+        | Command::Status
         | Command::Recommend
         | Command::List
         | Command::Rules { .. }

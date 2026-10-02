@@ -7,4 +7,5 @@ pub mod recommend;
 pub mod rules;
 pub mod status;
 pub mod ui;
+pub mod update;
 pub mod worktrees;
