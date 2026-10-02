@@ -2,6 +2,28 @@
 // `ai-toolbox-core` - anything renamed there has to be renamed here, which is the price
 // of not generating this file and the reason each name below matches its Rust field.
 
+export interface UpdateStatus {
+  current: string;
+  latest: string;
+  tag: string;
+  release_url: string;
+  available: boolean;
+  installation: {
+    binary: string | null;
+    app: string | null;
+    catalogue: string | null;
+    blocked: string | null;
+    notes: string[];
+  };
+  installed: Updated | null;
+}
+
+export interface Updated {
+  version: string;
+  restart_required: boolean;
+  output: string;
+}
+
 export type Harness = "claude" | "codex" | "pi";
 
 export type State = "unconfigured" | "healthy" | "attention" | "broken";

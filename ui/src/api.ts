@@ -7,6 +7,8 @@ import type {
   Request,
   ScanResult,
   Summary,
+  UpdateStatus,
+  Updated,
 } from "./types";
 
 // The token arrives in the URL query, because a freshly opened tab has no other channel.
@@ -62,6 +64,8 @@ const post = <T,>(path: string, body: unknown): Promise<T> =>
   call<T>(path, { method: "POST", body: JSON.stringify(body) });
 
 export const api = {
+  checkUpdate: () => call<UpdateStatus>("/update"),
+  update: (tag: string) => post<Updated>("/update", { tag }),
   machine: () => call<MachineInfo>("/machine"),
   catalogue: () => call<Catalogue>("/catalogue"),
   projects: () => call<Summary[]>("/projects"),

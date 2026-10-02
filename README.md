@@ -191,13 +191,44 @@ That puts the `ai-toolbox` binary on your `PATH`, installs `ai-toolbox.app` on m
 and clones the **catalogue** to `~/.ai-toolbox/clone`. The catalogue is a git clone on
 purpose: the hooks, presets and skills are read from disk at run time, so `git pull`
 updates what the tool offers and anything you add yourself appears in
-`ai-toolbox list`. Re-run the installer to update both halves. `--from-source` builds
-with cargo instead of downloading a release; `AI_TOOLBOX` overrides where the
-catalogue is read from.
+`ai-toolbox list`. `--from-source` builds with cargo instead of downloading a release;
+`AI_TOOLBOX` overrides where the catalogue is read from.
+
+**Update**
+
+```sh
+ai-toolbox update --check       # latest stable version and what would be replaced
+ai-toolbox update               # download, verify and install the newer release
+```
+
+Or click **Check for updates** at the bottom of the board's sidebar, then confirm
+**Install**. Checking is explicit, read-only and never installs automatically.
+`--dry-run` is equivalent to `--check`; both support `--json`. Offline/network errors
+are reported, not mistaken for “up to date”. Equal or older releases are not installed.
+
+Updates use the same release installer as first-time installation, pinned to the
+version you checked. SHA-256 verification is required before replacement. The running
+CLI is replaced in place; on macOS an existing `/Applications/ai-toolbox.app` is
+updated too. Updating from a macOS app updates that bundle at its current location.
+Quit and reopen the app, or stop and restart `ai-toolbox ui`, afterwards — reloading
+the browser tab does not restart the server.
+
+The managed catalogue clone is fast-forwarded only: local edits and additions are
+never reset or cleaned, and a failed fast-forward is reported as a warning. An
+explicit/working catalogue checkout is left untouched. A checkout shim keeps pointing
+at the same compiled binary; updating replaces that build with a release, **not**
+your source files. Rebuild with cargo instead if you want to keep running local code.
+Installed project hooks, skills and configuration are not changed by self-update.
+
+Updates never prompt for sudo from the board: destinations must be writable. Linux
+AppImage/.deb desktop installations should use their download/package manager; the
+Linux CLI and browser board support the update command. To get this command on an
+older installation that does not have it yet, re-run the one-line installer once.
 
 | Command | Does |
 |---|---|
 | `ai-toolbox ui` | **The board.** Every repo on this machine in one window: what each has installed, what is broken, what its worktrees are missing, and a catalogue you can click. Every button shows the file changes before it makes them. |
+| `ai-toolbox update [--check]` | Check for and install the latest stable ai-toolbox release. No repo required; `--check` and `--dry-run` write nothing. Also available in the board's sidebar. |
 | `ai-toolbox projects` | The same list in the terminal. `projects scan` finds the repos under `~/src`; `projects forget` drops one without touching its files. |
 | `ai-toolbox doctor [--fix]` | What is wrong here, named by consequence rather than symptom. `--fix` repairs what it safely can and never touches a local edit. |
 | `ai-toolbox worktrees [--sync]` | Every worktree against the main one. Nothing this tool writes is tracked by git, so a new worktree starts with none of it; `--sync` copies it across and never deletes. |
@@ -224,7 +255,8 @@ present. Every command is idempotent — hooks dedupe, MCP servers overwrite by 
 `base-charter` is marker-guarded. `--dry-run` shows the plan and writes nothing, and
 `--json` gives the same answer machine-readably. It writes only the target
 repo's `.claude/` + `.mcp.json` and/or `.codex/` + `.agents/skills/` (and the global
-charter file for `base-charter`); it never writes a real secret. What it *can't* do
+charter file for `base-charter`); self-update instead replaces the application and
+refreshes its managed catalogue. It never writes a real secret. What it *can't* do
 for you: export MCP secrets, complete OAuth (`/mcp` / `codex mcp login`), restart the
 harness — it prints those follow-ups after an install.
 

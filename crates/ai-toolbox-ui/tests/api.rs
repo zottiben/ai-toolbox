@@ -162,6 +162,23 @@ async fn the_api_refuses_a_request_without_the_token() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn updating_requires_authentication_and_a_tag_not_a_script_or_path() {
+    let board = board().await;
+    for method in ["GET", "POST"] {
+        let (status, _) = board.request(method, "/api/update", None, false);
+        assert_eq!(status, 401);
+    }
+    for body in [
+        serde_json::json!({}),
+        serde_json::json!({"tag": "v0.2.0", "url": "https://example.invalid/install.sh"}),
+        serde_json::json!({"tag": "v0.2.0", "binary": "/tmp/other"}),
+    ] {
+        let (status, _) = board.post("/api/update", body);
+        assert_eq!(status, 422);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn the_project_list_reports_the_state_of_each_repo() {
     let board = board().await;
     let projects = board.json("/api/projects");

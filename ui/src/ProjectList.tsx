@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { api } from "./api";
+import { Update } from "./Update";
 import {
   basename,
   countsLabel,
@@ -114,6 +115,7 @@ export function ProjectList({ summaries, selected, onSelect, onScanned }: Props)
           </li>
         )}
       </ul>
+      <Update />
     </aside>
   );
 }
