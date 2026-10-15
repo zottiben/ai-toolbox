@@ -32,13 +32,14 @@ use crate::paths;
 ///
 /// `.claude/skills` is in the list as a symlink and is never walked through: it points at
 /// `.agents/skills`, so following it would compare every skill twice.
-const MANAGED_FILES: [&str; 6] = [
+const MANAGED_FILES: [&str; 7] = [
     paths::SHARED_MCP,
     "AGENTS.md",
     "CLAUDE.md",
     paths::CLAUDE_SETTINGS,
     paths::CODEX_CONFIG,
     paths::PI_MCP,
+    paths::PI_MCP_ADAPTER,
 ];
 
 const MANAGED_TREES: [&str; 1] = [".agents"];

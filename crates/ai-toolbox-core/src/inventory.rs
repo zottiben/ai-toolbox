@@ -84,9 +84,9 @@ pub struct CodexView {
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PiView {
-    /// `.pi/mcp.json` exists only for a server whose Pi definition would be wrong for
-    /// Claude Code. Everything else Pi reads straight out of `.mcp.json`.
+    /// Adapter overrides; native Pi has separate complete definitions.
     pub overrides: Vec<InstalledServer>,
+    pub native: Vec<InstalledServer>,
 }
 
 /// How `.claude/skills` is standing. Claude Code reads only its own directory but does
@@ -131,7 +131,8 @@ impl Inventory {
             claude: read_claude(&repo)?,
             codex: read_codex(&repo)?,
             pi: PiView {
-                overrides: read_servers(&repo.join(".pi/mcp.json"))?,
+                overrides: read_servers(&repo.join(paths::PI_MCP_ADAPTER))?,
+                native: read_servers(&repo.join(paths::PI_MCP))?,
             },
             legacy: read_legacy(&repo),
             repo,
@@ -617,7 +618,7 @@ mod tests {
         assert_eq!(
             inventory
                 .pi
-                .overrides
+                .native
                 .iter()
                 .map(|s| s.name.as_str())
                 .collect::<Vec<_>>(),

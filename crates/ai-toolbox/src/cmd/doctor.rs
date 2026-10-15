@@ -18,6 +18,14 @@ pub fn run(
     json: bool,
 ) -> anyhow::Result<()> {
     let findings = &survey.findings;
+    let context = ai_toolbox_core::mcp::Context::current_for(&survey.inventory.repo);
+    let exposure = context
+        .as_ref()
+        .map_err(ToString::to_string)
+        .and_then(|context| {
+            ai_toolbox_core::mcp::inspect(context, &survey.inventory.repo)
+                .map_err(|e| e.to_string())
+        });
     let mut plan = Plan::default();
     if fix {
         doctor::repair(
@@ -37,6 +45,8 @@ pub fn run(
             "findings": findings,
             "repairs": plan.actions.iter().map(|a| a.line()).collect::<Vec<_>>(),
             "changes": plan.changes(),
+            "mcp": exposure.as_ref().ok(),
+            "mcp_error": exposure.as_ref().err().map(ToString::to_string),
         });
         if fix && !dry_run {
             action::apply(&plan.actions)?;
@@ -46,8 +56,27 @@ pub fn run(
     }
 
     out::heading(&format!("Doctor: {}", survey.inventory.repo.display()));
+    match exposure {
+        Ok(report) => {
+            out::info(&format!(
+                "MCP: {} known configured eager tools, {} unknown catalogues (offline, before trust/runtime overrides).",
+                report.known_direct_tools, report.unknown_catalogues
+            ));
+            for server in report.servers.iter().filter(|s| s.recommend_search) {
+                out::warn(&format!(
+                    "{} is always loaded from {}. Preview: ai-toolbox mcp-optimise preview",
+                    server.name,
+                    server.exposure_source.display()
+                ));
+            }
+            for warning in report.warnings {
+                out::warn(&warning);
+            }
+        }
+        Err(error) => out::warn(&format!("MCP inspection unavailable: {error}")),
+    }
     if findings.is_empty() {
-        out::ok("nothing to report");
+        out::ok("no other toolbox findings");
         return Ok(());
     }
 

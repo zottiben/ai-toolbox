@@ -1,5 +1,9 @@
 import type {
   Applied,
+  McpReport,
+  McpPreview,
+  McpOptions,
+  McpApplied,
   Catalogue,
   Detail,
   MachineInfo,
@@ -64,6 +68,10 @@ const post = <T,>(path: string, body: unknown): Promise<T> =>
   call<T>(path, { method: "POST", body: JSON.stringify(body) });
 
 export const api = {
+  mcpReport: (id: number) => call<McpReport>(`/projects/${id}/mcp`),
+  mcpPreview: (id: number, options: McpOptions) => post<McpPreview>(`/projects/${id}/mcp/preview`, options),
+  mcpApply: (id: string) => post<McpApplied>(`/mcp/apply/${id}`, {}),
+  mcpRollback: (id: string) => post<McpApplied>(`/mcp/rollback/${id}`, {}),
   checkUpdate: () => call<UpdateStatus>("/update"),
   update: (tag: string) => post<Updated>("/update", { tag }),
   machine: () => call<MachineInfo>("/machine"),

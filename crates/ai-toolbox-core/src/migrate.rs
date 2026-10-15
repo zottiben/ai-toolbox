@@ -18,28 +18,12 @@
 
 use std::path::{Path, PathBuf};
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use crate::action::Action;
 use crate::error::{Error, Result};
 use crate::install::Plan;
 use crate::paths;
-
-/// Pi keys Claude Code ignores, so they are safe in the shared `.mcp.json`.
-/// Verified against Claude Code 2.1.220: unknown server keys are ignored, not rejected.
-const SHAREABLE_PI_KEYS: [&str; 11] = [
-    "lifecycle",
-    "directTools",
-    "idleTimeout",
-    "requestTimeoutMs",
-    "exposeResources",
-    "toolPrefix",
-    "includeTools",
-    "excludeTools",
-    "approveTools",
-    "protocolVersion",
-    "disabled",
-];
 
 /// The per-harness directories that become one `.agents/` directory, and where each goes.
 const MOVES: [(&str, &str); 5] = [
@@ -329,154 +313,72 @@ fn rewrite(value: &Value) -> Value {
     }
 }
 
-/// Fold `.pi/mcp.json` into `.mcp.json`, keeping behind only what genuinely cannot be
-/// shared.
-///
-/// Three fix-ups for config older versions of this toolbox emitted, each of which
-/// produces a server that looks configured and does not work:
-///
-/// - `transport` is not a pi-mcp-adapter key at all - it is `httpTransport`.
-/// - `auth: {"type": "oauth"}` is the wrong shape. The adapter takes the string
-///   `"oauth"`, and an object makes `supportsOAuth()` return false, silently disabling
-///   the OAuth it was meant to enable. Omitting the key entirely means deferred
-///   auto-detected OAuth, which is the behaviour wanted.
-/// - an override that changes a server's transport kind leaves the merged entry with both
-///   `command` and `url`, which the adapter rejects outright.
+/// Move only obsolete adapter configuration; valid native definitions stay native.
 fn fold_pi(plan: &mut Plan, repo: &Path, report: &mut Report) -> Result<()> {
-    let pi_path = repo.join(paths::PI_MCP);
-    if !pi_path.is_file() {
+    let path = repo.join(paths::PI_MCP);
+    if !path.is_file() {
         return Ok(());
     }
-    let pi_text = std::fs::read_to_string(&pi_path).map_err(|e| Error::io(&pi_path, e))?;
-    let pi_doc: Value = serde_json::from_str(&pi_text).map_err(|e| Error::json(&pi_path, e))?;
-    let Some(pi_servers) = pi_doc.get("mcpServers").and_then(|s| s.as_object()) else {
+    let text = std::fs::read_to_string(&path).map_err(|e| Error::io(&path, e))?;
+    let doc: Value = serde_json::from_str(&text).map_err(|e| Error::json(&path, e))?;
+    crate::merge::require_canonical_mcp(&doc, &path)?;
+    let split = crate::convert::pi::split_legacy(&rewrite(&doc));
+    if split.is_empty() {
         return Ok(());
-    };
-
-    let shared_path = repo.join(paths::SHARED_MCP);
-    let mut shared: Value = if shared_path.is_file() {
-        let text = std::fs::read_to_string(&shared_path).map_err(|e| Error::io(&shared_path, e))?;
-        serde_json::from_str(&text).map_err(|e| Error::json(&shared_path, e))?
+    }
+    let adapter_path = repo.join(paths::PI_MCP_ADAPTER);
+    let mut adapter: Value = if adapter_path.is_file() {
+        let text =
+            std::fs::read_to_string(&adapter_path).map_err(|e| Error::io(&adapter_path, e))?;
+        serde_json::from_str(&text).map_err(|e| Error::json(&adapter_path, e))?
     } else {
-        Value::Object(Map::new())
+        serde_json::json!({})
     };
-    // Applied to the shared document too, since it may still name a legacy helper.
-    shared = rewrite(&shared);
-    let shared_servers = shared
-        .as_object_mut()
-        .expect("an mcp document is an object")
-        .entry("mcpServers")
-        .or_insert_with(|| Value::Object(Map::new()));
-    let Some(shared_servers) = shared_servers.as_object_mut() else {
-        return Ok(());
-    };
-
-    let mut kept = Map::new();
-    let mut moved = 0usize;
-    let mut stale = Vec::new();
-
-    for (name, raw) in pi_servers {
-        let entry = normalise_pi(&rewrite(raw));
-        let Some(entry) = entry.as_object() else {
-            continue;
-        };
-
-        let Some(target) = shared_servers.get_mut(name) else {
-            // Pi-only server: it belongs in the shared file, where Claude Code sees it.
-            shared_servers.insert(name.clone(), Value::Object(entry.clone()));
-            moved += 1;
-            continue;
-        };
-        let Some(target) = target.as_object_mut() else {
-            continue;
-        };
-
-        if let (Some(a), Some(b)) = (transport(entry), transport(target)) {
-            if a != b {
-                stale.push(name.clone());
-                continue;
+    crate::merge::require_canonical_mcp(&adapter, &adapter_path)?;
+    for (key, value) in split.settings {
+        if let (Some(old), Some(current)) = (
+            value.as_object(),
+            adapter.get_mut(&key).and_then(Value::as_object_mut),
+        ) {
+            for (key, value) in old {
+                current.entry(key.clone()).or_insert(value.clone());
             }
-        }
-
-        let mut stay = Map::new();
-        for (key, value) in entry {
-            if SHAREABLE_PI_KEYS.contains(&key.as_str()) {
-                target.insert(key.clone(), value.clone());
-            } else if target.get(key) == Some(value) {
-                // Identical to the shared definition: pure duplication, drop it.
-            } else {
-                stay.insert(key.clone(), value.clone());
-            }
-        }
-        if stay.is_empty() {
-            moved += 1;
-        } else {
-            kept.insert(name.clone(), Value::Object(stay));
+        } else if adapter.get(&key).is_none() {
+            adapter[&key] = value;
         }
     }
-
-    if moved > 0 {
-        report.notes.push(format!(
-            "{} server(s) folded into {}",
-            moved,
-            paths::SHARED_MCP
-        ));
+    if adapter.get("mcpServers").is_none() {
+        adapter["mcpServers"] = serde_json::json!({});
     }
-    if !kept.is_empty() {
-        let names: Vec<&str> = kept.keys().map(|k| k.as_str()).collect();
-        report.notes.push(format!(
-            "{} kept in {} - cannot be shared with Claude Code",
-            names.join(", "),
-            paths::PI_MCP
-        ));
+    for (name, value) in split.servers {
+        if adapter["mcpServers"].get(&name).is_none() {
+            adapter["mcpServers"][&name] = serde_json::json!({});
+        }
+        let current = adapter["mcpServers"][&name]
+            .as_object_mut()
+            .ok_or_else(|| Error::Catalogue("Adapter server must be an object".into()))?;
+        for (key, value) in value.as_object().into_iter().flatten() {
+            current.entry(key.clone()).or_insert(value.clone());
+        }
     }
-    for name in &stale {
-        report.conflicts.push(format!(
-            "{name} in {} changed the server's transport kind, which the adapter rejects - dropped. Re-run: ai-toolbox mcp {name}",
-            paths::PI_MCP
-        ));
-    }
-
     plan.push(Action::write(
-        &shared_path,
-        crate::merge::to_string(&shared),
-        format!("folded {} into {}", paths::PI_MCP, paths::SHARED_MCP),
+        &adapter_path,
+        crate::merge::to_string(&adapter),
+        "Move legacy Pi adapter settings to .pi/mcp-adapter.json",
     )?);
-
-    if kept.is_empty() {
-        plan.push(Action::remove(
-            &pi_path,
-            format!("remove {}", paths::PI_MCP),
-        )?);
-    } else {
-        plan.push(Action::write(
-            &pi_path,
-            crate::merge::to_string(&serde_json::json!({ "mcpServers": kept })),
-            format!("{} reduced to the Pi-only overrides", paths::PI_MCP),
-        )?);
+    plan.push(Action::write(
+        &path,
+        crate::merge::to_string(&Value::Object(split.native)),
+        "Preserve native Pi definitions without adapter-only fields",
+    )?);
+    report.notes.push("Moved obsolete Pi adapter settings; native definitions and newer adapter choices are preserved.".into());
+    if !split.dropped.is_empty() {
+        report.notes.push(format!(
+            "Removed unsupported legacy keys: {}",
+            split.dropped.join(", ")
+        ));
     }
     Ok(())
-}
-
-/// Strip keys older versions emitted that pi-mcp-adapter does not accept.
-fn normalise_pi(entry: &Value) -> Value {
-    let mut out = entry.clone();
-    let Some(map) = out.as_object_mut() else {
-        return out;
-    };
-    map.remove("transport");
-    // The adapter takes the *string* "oauth"; any other shape disables OAuth silently.
-    if map.get("auth").is_some_and(|a| !a.is_string()) {
-        map.remove("auth");
-    }
-    out
-}
-
-fn transport(entry: &Map<String, Value>) -> Option<&'static str> {
-    if entry.contains_key("url") {
-        return Some("url");
-    }
-    entry.contains_key("command").then_some("command")
 }
 
 fn is_executable(path: &Path) -> bool {
@@ -489,8 +391,10 @@ pub fn needed(repo: &Path) -> bool {
     if MOVES.iter().any(|(from, _)| repo.join(from).is_dir()) {
         return true;
     }
-    if repo.join(paths::PI_MCP).is_file() {
-        return true;
+    if let Ok(value) = crate::catalogue::read_json(&repo.join(paths::PI_MCP)) {
+        if !crate::convert::pi::split_legacy(&value).is_empty() {
+            return true;
+        }
     }
     let link = repo.join(paths::CLAUDE_SKILLS);
     std::fs::symlink_metadata(&link).is_ok_and(|m| m.is_dir() && !m.file_type().is_symlink())
@@ -692,7 +596,7 @@ mod tests {
     }
 
     #[test]
-    fn a_pi_only_server_moves_to_the_shared_file() {
+    fn a_valid_native_server_stays_in_its_native_file() {
         let fixture = Fixture::bare();
         fixture.write_mcp(serde_json::json!({ "mcpServers": {} }));
         fixture.write_json(
@@ -707,15 +611,13 @@ mod tests {
             &std::fs::read_to_string(fixture.path().join(paths::SHARED_MCP)).unwrap(),
         )
         .unwrap();
-        assert_eq!(shared["mcpServers"]["only-pi"]["command"], "node");
-        assert!(
-            !fixture.path().join(paths::PI_MCP).exists(),
-            "an empty override file is one more thing to keep in step for no reason"
-        );
+        assert!(shared["mcpServers"].get("only-pi").is_none());
+        assert!(fixture.path().join(paths::PI_MCP).exists());
+        assert!(!needed(fixture.path()));
     }
 
     #[test]
-    fn pis_shareable_keys_move_and_a_bang_header_stays_behind() {
+    fn legacy_adapter_keys_and_bang_headers_move_together() {
         let fixture = Fixture::bare();
         fixture.write_mcp(serde_json::json!({
             "mcpServers": { "remote": { "type": "http", "url": "https://x/api" } }
@@ -737,17 +639,19 @@ mod tests {
             &std::fs::read_to_string(fixture.path().join(paths::SHARED_MCP)).unwrap(),
         )
         .unwrap();
-        assert_eq!(shared["mcpServers"]["remote"]["lifecycle"], "lazy");
+        assert!(shared["mcpServers"]["remote"].get("lifecycle").is_none());
         assert!(
             shared["mcpServers"]["remote"].get("headers").is_none(),
             "Claude Code would send the literal '!command' string"
         );
 
         let pi: Value = serde_json::from_str(
-            &std::fs::read_to_string(fixture.path().join(paths::PI_MCP)).unwrap(),
+            &std::fs::read_to_string(fixture.path().join(paths::PI_MCP_ADAPTER)).unwrap(),
         )
         .unwrap();
+        assert_eq!(pi["mcpServers"]["remote"]["lifecycle"], "lazy");
         assert!(pi["mcpServers"]["remote"]["headers"].is_object());
+        assert!(!needed(fixture.path()));
     }
 
     #[test]
@@ -781,17 +685,25 @@ mod tests {
 
         assert!(shared["mcpServers"]["remote"].get("transport").is_none());
         assert!(shared["mcpServers"]["remote"].get("auth").is_none());
-        assert_eq!(shared["mcpServers"]["remote"]["lifecycle"], "lazy");
-
-        // The transport-changing override is dropped, with the command to put it back.
+        assert!(shared["mcpServers"]["remote"].get("lifecycle").is_none());
         assert_eq!(shared["mcpServers"]["local"]["command"], "node");
         assert!(shared["mcpServers"]["local"].get("url").is_none());
-        assert_eq!(report.conflicts.len(), 1);
-        assert!(report.conflicts[0].contains("ai-toolbox mcp local"));
+        let native = crate::catalogue::read_json(&fixture.path().join(paths::PI_MCP)).unwrap();
+        assert_eq!(
+            native["mcpServers"]["local"]["url"],
+            "https://elsewhere/api"
+        );
+        let adapter =
+            crate::catalogue::read_json(&fixture.path().join(paths::PI_MCP_ADAPTER)).unwrap();
+        assert_eq!(adapter["mcpServers"]["remote"]["lifecycle"], "lazy");
+        assert!(report
+            .notes
+            .iter()
+            .any(|n| n.contains("unsupported legacy keys")));
     }
 
     #[test]
-    fn an_emptied_harness_directory_is_removed_so_detection_does_not_claim_it() {
+    fn a_native_pi_directory_still_counts_as_pi() {
         let fixture = Fixture::bare();
         fixture.write_mcp(serde_json::json!({ "mcpServers": {} }));
         fixture.write_json(
@@ -800,12 +712,9 @@ mod tests {
         );
 
         migrate(&fixture);
+        assert!(fixture.path().join(".pi").exists());
         assert!(
-            !fixture.path().join(".pi").exists(),
-            "an empty .pi/ makes harness detection write Pi config for a repo with none"
-        );
-        assert!(
-            !crate::harness::detect(fixture.path(), fixture.path()).contains(&crate::Harness::Pi)
+            crate::harness::detect(fixture.path(), fixture.path()).contains(&crate::Harness::Pi)
         );
     }
 

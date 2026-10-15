@@ -12,6 +12,21 @@
 
 use serde_json::{Map, Value};
 
+/// A new canonical map shadows the adapter's entire legacy alias, not just the
+/// newly installed server. Never introduce it implicitly during another operation.
+pub(crate) fn require_canonical_mcp(document: &Value, path: &std::path::Path) -> crate::Result<()> {
+    if document.get("mcp-servers").is_some() {
+        return Err(crate::Error::Catalogue(format!("{}: manually convert legacy mcp-servers first, preserving any existing mcpServers entries; adding a new map would shadow those servers", path.display())));
+    }
+    if !document.is_object() || document.get("mcpServers").is_some_and(|v| !v.is_object()) {
+        return Err(crate::Error::Catalogue(format!(
+            "{}: MCP configuration and mcpServers must be objects",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
 /// Add or replace servers in a `.mcp.json`-shaped document, by name.
 ///
 /// Replace rather than deep-merge: a preset is one definition, and merging a new one

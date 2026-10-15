@@ -33,6 +33,15 @@ fn run() -> anyhow::Result<()> {
     if let Command::Update { check } = &cli.command {
         return cmd::update::run(*check || cli.dry_run, cli.json);
     }
+    match &cli.command {
+        Command::McpReport { backend } => {
+            return cmd::mcp::report(&cli.repo()?, backend.as_deref(), cli.json)
+        }
+        Command::McpOptimise { action } => {
+            return cmd::mcp::run(&cli.repo()?, action, cli.json, cli.dry_run)
+        }
+        _ => {}
+    }
     let catalogue = Catalogue::load(root::find()?)?;
     let options = Options {
         dry_run: cli.dry_run,
@@ -55,7 +64,9 @@ fn run() -> anyhow::Result<()> {
     remember(&cli, &repo);
 
     match &cli.command {
-        Command::Update { .. }
+        Command::McpReport { .. }
+        | Command::McpOptimise { .. }
+        | Command::Update { .. }
         | Command::List
         | Command::Rules { .. }
         | Command::PiInit
@@ -95,7 +106,14 @@ fn run() -> anyhow::Result<()> {
             cmd::install::run(&plan, &harnesses, options)
         }
         Command::Mcp { names } => {
-            let mut plan = install::Plan::default();
+            let mut plan = install::Plan {
+                pi_context: if harnesses.contains(&Harness::Pi) {
+                    Some(ai_toolbox_core::mcp::Context::current_for(&repo)?)
+                } else {
+                    None
+                },
+                ..install::Plan::default()
+            };
             install::mcp(&mut plan, &repo, &catalogue, names, &harnesses)?;
             cmd::install::run(&plan, &harnesses, options)
         }
@@ -184,7 +202,15 @@ fn bootstrap(
         &recommendation.hooks,
         &recommendation.mcp,
         &recommendation.skills,
-        scaffold,
+        install::Setup {
+            scaffold,
+            pi_target: None,
+            pi_context: if !recommendation.mcp.is_empty() && harnesses.contains(&Harness::Pi) {
+                Some(ai_toolbox_core::mcp::Context::current_for(repo)?)
+            } else {
+                None
+            },
+        },
     )?;
 
     if !options.dry_run && !yes && !cli.json {
@@ -263,7 +289,9 @@ fn writes(command: &Command) -> bool {
         | Command::Migrate => true,
         Command::Doctor { fix } => *fix,
         Command::Worktrees { sync } => *sync,
-        Command::Update { .. }
+        Command::McpReport { .. }
+        | Command::McpOptimise { .. }
+        | Command::Update { .. }
         | Command::Status
         | Command::Recommend
         | Command::List

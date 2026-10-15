@@ -117,7 +117,7 @@ pub fn configured(repo: &Path) -> Vec<Harness> {
     if repo.join(".codex/config.toml").is_file() {
         found.push(Harness::Codex);
     }
-    if repo.join(".pi/mcp.json").is_file() {
+    if repo.join(".pi/mcp.json").is_file() || repo.join(".pi/mcp-adapter.json").is_file() {
         found.push(Harness::Pi);
     }
     found

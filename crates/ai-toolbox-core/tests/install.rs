@@ -224,3 +224,56 @@ fn tree(root: &Path) -> Vec<String> {
     found.sort();
     found
 }
+
+fn install_presets(repo: &Path, presets: &[&str]) {
+    let catalogue = testing::catalogue();
+    let presets: Vec<String> = presets.iter().map(|p| p.to_string()).collect();
+    let plan =
+        install::everything(repo, &catalogue, &HARNESSES, &[], &presets, &[], false).unwrap();
+    action::apply(&plan.actions).unwrap();
+}
+
+fn read(path: PathBuf) -> serde_json::Value {
+    serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+}
+
+#[test]
+fn repro_a_stdio_preset_is_not_put_straight_into_the_prompt() {
+    let temp = tempfile::tempdir().unwrap();
+    let repo = seeded(temp.path().join("repo"));
+    install_presets(&repo, &["playwright"]);
+    let mcp = read(repo.join(".mcp.json"));
+    assert_ne!(mcp["mcpServers"]["playwright"]["directTools"], true);
+}
+
+#[test]
+fn repro_reinstalling_keeps_a_deliberate_exposure_choice() {
+    let temp = tempfile::tempdir().unwrap();
+    let repo = seeded(temp.path().join("repo"));
+    install_presets(&repo, &["playwright"]);
+    let path = repo.join(".mcp.json");
+    let mut mcp = read(path.clone());
+    mcp["mcpServers"]["playwright"]["directTools"] = serde_json::json!(false);
+    mcp["mcpServers"]["playwright"]["approveTools"] = serde_json::json!(["browser_*"]);
+    std::fs::write(&path, serde_json::to_string_pretty(&mcp).unwrap()).unwrap();
+    install_presets(&repo, &["playwright"]);
+    let mcp = read(path);
+    assert_eq!(mcp["mcpServers"]["playwright"]["directTools"], false);
+    assert_eq!(
+        mcp["mcpServers"]["playwright"]["approveTools"][0],
+        "browser_*"
+    );
+}
+
+#[test]
+fn repro_migrate_leaves_valid_native_pi_config_alone() {
+    let temp = tempfile::tempdir().unwrap();
+    let repo = seeded(temp.path().join("repo"));
+    std::fs::create_dir_all(repo.join(".pi")).unwrap();
+    std::fs::write(
+        repo.join(".pi/mcp.json"),
+        r#"{"mcpServers":{"docs":{"url":"https://example.com/mcp","exposure":"deferred"}}}"#,
+    )
+    .unwrap();
+    assert!(!ai_toolbox_core::migrate::needed(&repo));
+}
