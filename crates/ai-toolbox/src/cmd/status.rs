@@ -131,6 +131,7 @@ fn skills_link(link: &SkillsLink) -> String {
 
 fn pi_client(state: PiMcp) -> String {
     match state {
+        PiMcp::Native => "built-in MCP (adapter optional)".into(),
         PiMcp::Ready => format!("{} (global)", paths::PI_MCP_PACKAGE),
         PiMcp::Missing => out::yellow("not installed - run: ai-toolbox pi-init"),
         PiMcp::NoPi => out::dim("pi is not on this machine"),
@@ -138,15 +139,35 @@ fn pi_client(state: PiMcp) -> String {
 }
 
 fn pi_mcp_line(survey: &Survey) -> String {
-    let overrides = &survey.inventory.pi.overrides;
-    if overrides.is_empty() {
-        return format!("reads {}", paths::SHARED_MCP);
-    }
-    let names: Vec<&str> = overrides.iter().map(|s| s.name.as_str()).collect();
+    let native: Vec<_> = survey
+        .inventory
+        .pi
+        .native
+        .iter()
+        .map(|s| s.name.as_str())
+        .collect();
+    let overrides: Vec<_> = survey
+        .inventory
+        .pi
+        .overrides
+        .iter()
+        .map(|s| s.name.as_str())
+        .collect();
     format!(
-        "reads {} + overrides: {}",
+        "native {}: {}; adapter {} + {}: {}",
+        paths::PI_MCP,
+        if native.is_empty() {
+            "none".into()
+        } else {
+            native.join(" ")
+        },
         paths::SHARED_MCP,
-        names.join(" ")
+        paths::PI_MCP_ADAPTER,
+        if overrides.is_empty() {
+            "no overrides".into()
+        } else {
+            overrides.join(" ")
+        }
     )
 }
 

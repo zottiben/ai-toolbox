@@ -42,6 +42,7 @@ pub mod install;
 pub mod inventory;
 mod jsonc;
 pub mod machine;
+pub mod mcp;
 pub mod merge;
 pub mod migrate;
 pub mod paths;

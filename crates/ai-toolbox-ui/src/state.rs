@@ -27,6 +27,7 @@ pub struct AppState {
     watched: Arc<Mutex<HashMap<PathBuf, usize>>>,
     /// Serialise updates across tabs and remember completion until this process exits.
     pub(crate) update: Arc<Mutex<Option<ai_toolbox_core::update::Updated>>>,
+    pub(crate) mcp_context: ai_toolbox_core::mcp::Context,
 }
 
 /// What the board is told. Deliberately thin: the client refetches, so the message only
@@ -42,6 +43,20 @@ impl AppState {
         registry: Registry,
         token: impl Into<Arc<str>>,
     ) -> AppState {
+        Self::with_context(
+            catalogue_root,
+            registry,
+            token,
+            ai_toolbox_core::mcp::Context::storage(),
+        )
+    }
+
+    pub fn with_context(
+        catalogue_root: PathBuf,
+        registry: Registry,
+        token: impl Into<Arc<str>>,
+        context: ai_toolbox_core::mcp::Context,
+    ) -> AppState {
         // Small on purpose. A client that falls behind loses nothing by being told once
         // instead of eight times - it refetches either way.
         let (changes, _) = broadcast::channel(16);
@@ -52,7 +67,15 @@ impl AppState {
             changes,
             watched: Arc::new(Mutex::new(HashMap::new())),
             update: Arc::new(Mutex::new(None)),
+            mcp_context: context,
         }
+    }
+
+    pub(crate) fn mcp_for_project(
+        &self,
+        repo: &std::path::Path,
+    ) -> Result<ai_toolbox_core::mcp::Context> {
+        Ok(self.mcp_context.for_project(repo)?)
     }
 
     pub fn token(&self) -> &str {

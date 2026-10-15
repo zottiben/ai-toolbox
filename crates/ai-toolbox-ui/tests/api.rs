@@ -13,10 +13,16 @@ use ai_toolbox_core::registry::Registry;
 use ai_toolbox_core::testing::{self, Fixture};
 use ai_toolbox_ui::{ServeOptions, Server};
 
+#[path = "support/mcp_refresh.rs"]
+mod mcp_refresh_tests;
+#[path = "support/mcp.rs"]
+mod mcp_tests;
+
 struct Board {
     addr: String,
     token: String,
     _fixture: Fixture,
+    _home: Fixture,
     repo: PathBuf,
     id: i64,
 }
@@ -33,10 +39,30 @@ async fn board() -> Board {
 
     let mut registry = Registry::memory().expect("an in-memory registry");
     let recorded = registry.record(&repo, true).expect("recording the fixture");
-
-    let server = Server::bind(testing::catalogue_root(), registry, ServeOptions::default())
-        .await
-        .expect("binding the board");
+    let home = Fixture::bare();
+    let home_path = home.path().canonicalize().unwrap();
+    home.write_json(
+        ".pi/agent/settings.json",
+        serde_json::json!({"packages":["npm:pi-mcp-adapter"]}),
+    );
+    home.write_json(
+        ".pi/agent/npm/node_modules/pi-mcp-adapter/package.json",
+        serde_json::json!({"version":"5.3.0"}),
+    );
+    let context = ai_toolbox_core::mcp::Context {
+        home: home_path.clone(),
+        agent_dir: home_path.join(".pi/agent"),
+        backend: ai_toolbox_core::mcp::Backend::Adapter,
+        adapter_manifest: None,
+    };
+    let server = Server::bind_with_context(
+        testing::catalogue_root(),
+        registry,
+        ServeOptions::default(),
+        context,
+    )
+    .await
+    .expect("binding the board");
 
     let addr = server.addr().to_string();
     let token = server.token().to_string();
@@ -50,6 +76,7 @@ async fn board() -> Board {
         repo: recorded.path.clone(),
         id: recorded.id,
         _fixture: fixture,
+        _home: home,
     }
 }
 
@@ -313,6 +340,14 @@ async fn planning_writes_nothing_and_applying_writes_what_was_planned() {
 #[tokio::test(flavor = "multi_thread")]
 async fn repair_fixes_what_doctor_found() {
     let board = board().await;
+    // An unrelated ambiguous MCP registration must not block hook repair.
+    board._home.write_json(
+        ".pi/agent/settings.json",
+        serde_json::json!({"packages":[{"source":"npm:pi-mcp-adapter","extensions":["index.ts"]}]}),
+    );
+    board
+        ._fixture
+        .write_json(".pi/mcp.json", serde_json::json!({}));
     std::fs::remove_file(board.repo.join(".agents/hooks/format-on-edit.sh")).unwrap();
 
     let detail = board.json(&format!("/api/projects/{}", board.id));
@@ -375,9 +410,22 @@ async fn a_worktree_can_be_converged_from_the_board() {
 
     let mut registry = Registry::memory().unwrap();
     let recorded = registry.record(lab.main(), true).unwrap();
-    let server = Server::bind(testing::catalogue_root(), registry, ServeOptions::default())
-        .await
-        .unwrap();
+    let home = Fixture::bare();
+    let root = home.path().canonicalize().unwrap();
+    let context = ai_toolbox_core::mcp::Context {
+        home: root.clone(),
+        agent_dir: root.join(".pi/agent"),
+        backend: ai_toolbox_core::mcp::Backend::Native,
+        adapter_manifest: None,
+    };
+    let server = Server::bind_with_context(
+        testing::catalogue_root(),
+        registry,
+        ServeOptions::default(),
+        context,
+    )
+    .await
+    .unwrap();
     let addr = server.addr().to_string();
     let token = server.token().to_string();
     tokio::spawn(async move {
@@ -390,6 +438,7 @@ async fn a_worktree_can_be_converged_from_the_board() {
         repo: lab.main().to_path_buf(),
         id: recorded.id,
         _fixture: Fixture::bare(),
+        _home: home,
     };
 
     let detail = board.json(&format!("/api/projects/{}", board.id));

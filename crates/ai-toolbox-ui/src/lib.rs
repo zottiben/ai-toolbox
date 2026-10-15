@@ -13,6 +13,7 @@ mod assets;
 mod auth;
 mod error;
 mod events;
+mod mcp;
 mod read;
 mod state;
 mod update;
@@ -69,16 +70,33 @@ impl Server {
         registry: Registry,
         options: ServeOptions,
     ) -> Result<Server> {
+        Self::bind_with_context(
+            catalogue_root,
+            registry,
+            options,
+            ai_toolbox_core::mcp::Context::storage(),
+        )
+        .await
+    }
+
+    /// Explicit filesystem context for isolated tests and embedded applications.
+    pub async fn bind_with_context(
+        catalogue_root: PathBuf,
+        registry: Registry,
+        options: ServeOptions,
+        context: ai_toolbox_core::mcp::Context,
+    ) -> Result<Server> {
         let token = match options.token {
             Some(t) if !t.trim().is_empty() => t,
             _ => auth::mint_token()?,
         };
-        let state = AppState::new(catalogue_root, registry, token.as_str());
+        let state = AppState::with_context(catalogue_root, registry, token.as_str(), context);
 
         let api = read::routes()
             .merge(write::routes())
             .merge(events::routes())
             .merge(update::routes())
+            .merge(mcp::routes())
             .route_layer(axum::middleware::from_fn_with_state(
                 state.clone(),
                 auth::require_token,

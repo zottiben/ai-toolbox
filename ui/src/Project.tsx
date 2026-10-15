@@ -3,6 +3,7 @@ import { api } from "./api";
 import { Catalogue } from "./Catalogue";
 import { Findings } from "./Findings";
 import { Installed } from "./Installed";
+import { McpPanel } from "./McpPanel";
 import { PlanDialog } from "./PlanDialog";
 import { Worktrees } from "./Worktrees";
 import { basename, stateLabel, stateTone, tilde } from "./format";
@@ -110,6 +111,8 @@ export function Project({ id, detail, catalogue, onChanged, onForgotten }: Props
           )
         }
       />
+
+      <McpPanel key={id} id={id} onChanged={onChanged} />
 
       <Installed items={detail.items ?? []} />
 

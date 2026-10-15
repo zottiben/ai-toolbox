@@ -146,7 +146,8 @@ CLAUDE.md                 one line: @AGENTS.md    Claude Code doesn't read AGENT
 .claude/skills            symlink -> ../.agents/skills
 .claude/settings.json     hook wiring only
 .codex/config.toml        generated: MCP tables + hook wiring
-.pi/mcp.json              only a server Pi must define differently (today: pixellab)
+.pi/mcp.json              complete definitions for native Pi MCP (Pi 0.99+)
+.pi/mcp-adapter.json      adapter-only settings and overrides (optional adapter)
 ```
 
 Why the split is shaped this way, verified against the current releases rather than
@@ -446,10 +447,13 @@ only then derives what cannot be shared:
   a `${VAR}` in args becomes a `with-dotenv.sh` wrap that expands it at launch, and a
   remote `headersHelper` becomes `bearer_token_env_var` (with a printed caveat - see
   below). Re-running the command regenerates it; don't hand-edit it.
-- **`.pi/mcp.json`** appears only for a server whose Pi definition would be *wrong* for
-  Claude Code. Today that is exactly one case: a `headersHelper` server, because Pi needs
-  a `headers` value that Claude Code would send as a literal string. Everything else lives
-  in the shared file.
+- **`.pi/mcp.json`** holds complete translated definitions for Pi's built-in MCP
+  (Pi 0.99+), which does not read shared `.mcp.json` files. Native exposure defaults to
+  `deferred`, except the small Context7/Excel set.
+- **`.pi/mcp-adapter.json`** holds adapter-only overrides, such as a `!command` header
+  that Claude would otherwise send literally. The optional adapter continues to read
+  shared `.mcp.json`. Native files never receive adapter-only settings. `migrate`
+  moves obsolete adapter keys without deleting valid native definitions.
 
 Global scopes still exist if you want them (`~/.claude.json`, `~/.codex/config.toml`,
 `~/.pi/agent/mcp.json`); the toolbox works per repo.
@@ -526,20 +530,24 @@ environment you launch `codex` from - so for a remote MCP on Codex, **export the
 (it won't be read from the repo `.env`). A `${VAR}` stdio env secret maps to
 `env_vars = ["VAR"]`, the same host-env passthrough Claude Code's `${VAR}` already relies on.
 
-**On Pi the MCP client is a package.** Pi's core is minimal; MCP comes from the
-`pi-mcp-adapter` package. Run `ai-toolbox pi-init` once per machine (it runs
-`pi install npm:pi-mcp-adapter` globally and is idempotent) - this is "initialise a
-Pi instance with MCP capabilities". After that, `ai-toolbox mcp <preset...>` is all you
-need - Pi reads the repo's `.mcp.json` directly. Restart pi, trust the project folder
-when it asks, and `/mcp` to check status.
+**Pi 0.99+ has built-in MCP; the adapter is optional.** `ai-toolbox pi-init` recognises
+modern npm-installed Pi and does not install an unnecessary adapter. On older Pi it
+installs `pi-mcp-adapter` as before. An active adapter replaces native session MCP;
+`ai-toolbox mcp <preset...>` targets the detected implementation. CLI and board share
+fresh global/project package detection; `extensions: []` disables an adapter package.
+Missing installations, filtered/nonstandard registrations and an explicitly disabled
+built-in backend require manual verification rather than a guessed fallback. Configuration support
+is checked against Pi 1.2.0 and adapter 5.3.0. Reload/restart Pi, trust the project when
+asked, and use `/mcp` to check the actual connected session.
 
 Pi **never interpolates `command`/`args`**, which is why every secret-bearing stdio
 preset uses `.agents/mcp/with-dotenv.sh`: it loads the repo `.env` and expands `${VAR}`
 in the args at launch, so tokens like `FIGMA_API_KEY` / `SUPABASE_ACCESS_TOKEN` stay in
 `.env` (no export needed) and the *same* entry works in Claude Code and Codex. For remote
 servers Pi runs a header value that starts with `!` as a *command* at connect time and
-uses its stdout - so a `headersHelper` preset like `pixellab` gets a `.pi/mcp.json`
-override of `"Authorization": "!.agents/mcp/dotenv-header.sh --raw PIXELLAB_API_TOKEN"`,
+uses its stdout - so a `headersHelper` preset like `pixellab` gets a Pi-only
+definition (`.pi/mcp.json` for native, `.pi/mcp-adapter.json` for the adapter) with
+`"Authorization": "!.agents/mcp/dotenv-header.sh --raw PIXELLAB_API_TOKEN"`,
 keeping the same repo-`.env` workflow with no bridge process and no token in the config.
 That is the one server that needs a Pi-only definition.
 
@@ -549,21 +557,76 @@ That is the one server that needs a Pi-only definition.
 runs the full OAuth2 + PKCE flow in the browser on first connect, storing the token in
 the OS credential store so it survives restarts. No `codex mcp login` equivalent to run.
 
-**Two Pi-specific knobs the converter sets for you.** *stdio* servers get
-`lifecycle: "eager"` + `directTools: true` - they are local, cheap to spawn, and their
-tools land in the prompt exactly like Claude Code. *Remote* servers get
-`lifecycle: "lazy"` and stay behind the adapter's one-tool proxy, because the SaaS
-servers are the tool-heavy ones (pixellab alone registers 72 tools, ClickUp 55) and the
-adapter itself warns once a session passes ~75 direct tools. The proxy still searches,
-describes, and calls them from cached metadata without connecting. Both keys live on the
-server in `.mcp.json`, so flip `directTools: true` (or `"lazy"`/`"eager"`) right there
-when you want the other trade-off - Claude Code ignores them.
+**Exposure is not lifecycle.** New large/unknown adapter catalogues use
+`directTools: "search"` on adapter 2.33+, or compatible proxy exposure (`false`) when
+its version is older/unknown. Context7 and an existing server named `excel` remain the
+small direct set (Excel is not a bundled preset).
+Stdio no longer implies a small catalogue. The stdio/remote process-start defaults
+remain independent, and reinstalling a preset preserves deliberate exposure, lifecycle,
+approval and filter choices, including inherited global settings. A complete native
+preset cannot replace an inherited user-level server and shadow its credentials; that
+case is refused without writing. Updated transports do not inherit credentials for
+another endpoint. Native Pi uses `exposure: "deferred"`, not adapter fields.
 
-One merge rule worth knowing: the adapter reads `.mcp.json` **and** `.pi/mcp.json` and
-merges them per server, key by key, so a repo set up for both Claude Code and Pi ends up
-with the Pi entry layered over the shared one. That is why the converter never changes a
-server's transport kind - a `command` layered over a `url` would leave an entry with
-both, which the adapter rejects.
+### Inspect and optimise MCP exposure
+
+The CLI and project board use the same Rust engine. Inspection is offline: no server
+startup, OAuth, secret-command execution or model calls. Reports show the exposure's
+winning file, contributing layers, valid cached counts and explicit **unknown** values.
+These are configured-file counts **before project trust and runtime/session overrides**,
+not a claim that those tools are available to a live or headless session. Unresolved
+configuration is explicitly marked partial. `--backend` is inspection-only.
+`doctor` includes the MCP report but `doctor --fix` never silently optimises exposure.
+
+```sh
+ai-toolbox mcp-report                       # --json; --backend native|adapter
+ai-toolbox mcp-optimise preview --keep-direct context7,excel
+ai-toolbox mcp-optimise preview --scope worktrees
+ai-toolbox projects scan --root ~/src       # explicitly discover/register more projects
+ai-toolbox mcp-optimise preview --scope all  # registered projects + Git worktrees, even outside HOME
+ai-toolbox mcp-optimise preview --scope machine  # explicitly includes global Pi settings
+ai-toolbox mcp-optimise apply <preview-id>
+ai-toolbox mcp-optimise rollback <preview-id>
+```
+
+Project scopes edit project configuration, never global/imported files. These files
+may be Git-tracked; worktree scope can leave a diff in each selected checkout. Global-only
+adapter servers are left unchanged with a notice: adding even a partial project entry
+changes trust requirements. Use the explicit machine scope for global changes. Mixed-backend
+scopes are refused; optimise same-backend projects separately, or configure global
+exposure directly in Pi. Context7/Excel and deliberate native per-tool choices remain
+unchanged by default. `--keep-direct` retains named servers unchanged; `--keep-tool SERVER:TOOL` retains individual tools
+only when valid cached metadata confirms them. The board offers the same choices,
+exact changed-field preview, scope selection, apply and rollback. Editing choices
+invalidates the displayed preview. Apply uses the retained preview, not a recalculated
+request, and rejects changed inputs before writing. A busy Pi session can update cached
+metadata and invalidate the preview; preview again rather than applying stale evidence.
+
+Original bytes are retained in `~/.ai-toolbox/mcp-optimisation/` (directory mode 0700,
+records mode 0600). Backups can contain credentials: do not commit or share them.
+Preview/recovery records are retained until you remove them; review them periodically,
+and keep any backup still needed for rollback.
+Rollback refuses to overwrite subsequent edits. A failed partial apply reports its
+backup and recovery command. Processes are not stopped, servers are not disabled,
+and credentials, permission policy, filters and lifecycle are not rewritten. Exposure
+changes invalidate adapter server approvals: **reapprove interactively before running
+headless/JSON/RPC sessions**, which may block those tools until approved. Reload/restart
+Pi after applying. The toolbox never edits approval records or relaxes project trust.
+
+**Conservative offline limits:** native Pi currently has no compatible disk catalogue;
+adapter optimisation and cache identity are certified for **5.3.x** only. Other adapter
+versions can be inspected, but are not mutated by the optimiser. Expired/private/mismatched metadata,
+secret-dependent identity, resource-generated tools and unverified selector aliases
+remain unknown. Imported host configurations, ancestor discovery, package/plugin-owned
+MCP sources, config/exposure environment overrides and native credential/per-tool
+translation that cannot be resolved safely
+are explicitly reported as incomplete and block optimisation rather than guessing.
+Preset installation also refuses unresolved inherited configuration rather than risk
+overwriting a choice from an unknown source. Unrelated hook/skill repairs still work.
+Legacy `mcp-servers` maps must be converted explicitly: introducing `mcpServers` would
+shadow the entire legacy map, so installation, migration and optimisation refuse it.
+Use Pi's `/mcp` for live inspection of these cases. Commented configuration is readable,
+but rewriting a commented destination is refused so annotations are not lost.
 
 **Multiple environments.** Add one server entry per env (they differ only by
 `--project-ref`; refs aren't secret). A Supabase PAT is account-level, so the same

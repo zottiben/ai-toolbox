@@ -198,7 +198,7 @@ export interface Catalogue {
 export interface MachineInfo {
   machine: {
     charters: { harness: Harness; path: string; installed: boolean }[];
-    pi_mcp: "ready" | "missing" | "no-pi";
+    pi_mcp: "ready" | "native" | "missing" | "no-pi";
   };
   catalogue_root: string;
   version: string;
@@ -230,6 +230,29 @@ export interface ScanResult {
   known: string[];
   missing_roots: string[];
 }
+
+export interface McpOptions {
+  scope: "project" | "worktrees" | "all" | "machine";
+  keep_direct: string[];
+  keep_tools: Record<string, string[]>;
+}
+export interface McpServer {
+  name: string; enabled: boolean; exposure: string;
+  source: string; exposure_source: string; sources: string[];
+  tools: number | null; direct_tools: number | null;
+  tool_names: string[]; cache_note: string; recommend_search: boolean;
+}
+export interface McpReport {
+  complete: boolean;
+  repo: string; backend: "adapter" | "native"; servers: McpServer[];
+  known_direct_tools: number; unknown_catalogues: number; warnings: string[];
+}
+export interface McpPreview {
+  id: string; scope: McpOptions["scope"]; reports: McpReport[];
+  changes: { path: string; server: string; before: unknown; after: unknown }[];
+  warnings: string[];
+}
+export interface McpApplied { id: string; files: number; backup: string }
 
 /** What the board asks the server to do. Planned first, then applied. */
 export type Request =

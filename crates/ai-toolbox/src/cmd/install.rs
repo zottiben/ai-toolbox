@@ -110,10 +110,11 @@ fn report_secrets(plan: &Plan) {
 /// How to make each harness pick the change up. Only printed when MCP servers were part
 /// of the plan, since that is the case where restarting and authenticating is needed.
 fn report_next_steps(harnesses: &[Harness], plan: &Plan) {
-    let touched_mcp = plan
-        .actions
-        .iter()
-        .any(|a| a.path.ends_with(paths::SHARED_MCP) || a.path.ends_with(paths::PI_MCP));
+    let touched_mcp = plan.actions.iter().any(|a| {
+        a.path.ends_with(paths::SHARED_MCP)
+            || a.path.ends_with(paths::PI_MCP)
+            || a.path.ends_with(paths::PI_MCP_ADAPTER)
+    });
     if !touched_mcp {
         return;
     }
@@ -127,7 +128,7 @@ fn report_next_steps(harnesses: &[Harness], plan: &Plan) {
                 out::info("Codex ignores project .codex/ until the project is trusted - run 'codex' here and approve.");
             }
             Harness::Pi => match Machine::read().pi_mcp {
-                PiMcp::Ready => out::info(
+                PiMcp::Ready | PiMcp::Native => out::info(
                     "Pi: restart pi in this repo, then /mcp to connect (OAuth servers open a browser login on first connect; tokens go to the OS credential store).",
                 ),
                 _ => out::warn(
@@ -144,6 +145,10 @@ fn report_next_steps(harnesses: &[Harness], plan: &Plan) {
 /// that both halves actually landed.
 pub fn pi_init() -> anyhow::Result<()> {
     let machine = Machine::read();
+    if machine.pi_mcp == PiMcp::Native {
+        out::ok("Pi has built-in MCP. No adapter installation is required; it remains optional.");
+        return Ok(());
+    }
     if machine.pi_mcp == PiMcp::Ready {
         out::ok("Pi MCP adapter already installed globally (nothing to do)");
         return Ok(());
@@ -154,6 +159,9 @@ pub fn pi_init() -> anyhow::Result<()> {
         );
     }
 
+    // Never repair an intentional disable or ambiguous resource filter by installing
+    // another backend behind the operator's back.
+    ai_toolbox_core::mcp::Context::storage().detected(None)?;
     out::info(&format!(
         "Installing {} globally (pi install npm:{})...",
         paths::PI_MCP_PACKAGE,

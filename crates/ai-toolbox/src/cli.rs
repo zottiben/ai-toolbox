@@ -70,6 +70,17 @@ pub enum Command {
         #[arg(required = true)]
         names: Vec<String>,
     },
+    /// Inspect effective Pi MCP exposure offline; never connects servers.
+    McpReport {
+        #[arg(long, value_parser = ["adapter", "native"])]
+        backend: Option<String>,
+    },
+    /// Preview, apply or roll back MCP exposure changes across explicit scopes.
+    #[command(alias = "mcp-optimize")]
+    McpOptimise {
+        #[command(subcommand)]
+        action: McpOptimise,
+    },
     /// Install skills into .agents/skills.
     #[command(alias = "skills")]
     Skill {
@@ -112,7 +123,7 @@ pub enum Command {
     },
     /// Drop the .env launcher some presets shell out to.
     WithDotenv,
-    /// Install Pi's MCP client. Once per machine.
+    /// Check native Pi MCP support, or install the adapter for older Pi.
     PiInit,
 
     /// Update ai-toolbox itself to the latest stable release.
@@ -137,6 +148,24 @@ pub enum Command {
         #[command(subcommand)]
         action: Option<Projects>,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum McpOptimise {
+    /// Retain an exact preview; writes only private toolbox preview/backup state.
+    Preview {
+        #[arg(long, default_value = "project", value_parser = ["project", "worktrees", "all", "machine"])]
+        scope: String,
+        #[arg(long, value_delimiter = ',')]
+        keep_direct: Vec<String>,
+        /// Keep one validated cached tool direct, as SERVER:TOOL (repeatable).
+        #[arg(long)]
+        keep_tool: Vec<String>,
+    },
+    /// Apply precisely this retained preview, rejecting stale inputs.
+    Apply { id: String },
+    /// Restore originals only if no later edits would be overwritten.
+    Rollback { id: String },
 }
 
 #[derive(Debug, Subcommand)]

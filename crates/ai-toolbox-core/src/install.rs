@@ -37,6 +37,9 @@ use crate::paths;
 #[derive(Debug, Default)]
 pub struct Plan {
     pub actions: Vec<Action>,
+    /// Explicit surface choice; tests and portable callers default to the modern adapter.
+    pub pi_target: Option<convert::pi::Target>,
+    pub pi_context: Option<crate::mcp::Context>,
     /// Real harness differences a conversion had to make, surfaced rather than buried.
     pub warnings: Vec<String>,
     /// Secrets the installed servers need, and where each one has to go.
@@ -286,24 +289,57 @@ pub fn mcp(
         .iter()
         .map(|p| (p.name.as_str(), &p.servers))
         .collect();
-    let servers: Map<String, Value> = chosen
+    let mut servers: Map<String, Value> = chosen
         .iter()
         .flat_map(|preset| preset.servers.iter())
         .map(|(name, definition)| (name.clone(), definition.clone()))
         .collect();
 
+    let inherited = plan
+        .pi_context
+        .as_ref()
+        .map(|context| crate::mcp::install_choices(context, repo))
+        .transpose()?;
+
     // The canonical file, which Claude Code and Pi both read directly.
     let shared_path = repo.join(paths::SHARED_MCP);
     let mut shared = plan.read_json(&shared_path)?;
+    merge::require_canonical_mcp(&shared, &shared_path)?;
+    for (name, definition) in &mut servers {
+        let fresh = definition.clone();
+        plan.warnings.extend(convert::pi::carry(
+            name,
+            paths::SHARED_MCP,
+            &shared["mcpServers"][name],
+            &fresh,
+            definition.as_object_mut().expect("preset server"),
+        ));
+    }
     merge::mcp_servers(&mut shared, &servers);
 
     // Pi layers its knobs onto the same file, so it has to run before the write action
     // is built or the preview would show content that is one step out of date.
-    let pi = harnesses
-        .contains(&Harness::Pi)
-        .then(|| convert::pi::convert(&pairs));
+    let pi = harnesses.contains(&Harness::Pi).then(|| {
+        convert::pi::convert(
+            &pairs,
+            plan.pi_context
+                .as_ref()
+                .map(crate::mcp::Context::install_target)
+                .or(plan.pi_target)
+                .unwrap_or(convert::pi::Target::Adapter { search: true }),
+        )
+    });
     if let Some(converted) = &pi {
-        merge::overlay_server_keys(&mut shared, &converted.shared);
+        let higher = plan.read_json(&repo.join(paths::PI_MCP_ADAPTER))?;
+        for (name, defaults) in &converted.shared {
+            if let Some(entry) = shared["mcpServers"][name].as_object_mut() {
+                let choices = inherited
+                    .as_ref()
+                    .map(|choices| choices.servers.get(name).unwrap_or(&choices.defaults))
+                    .or_else(|| higher["mcpServers"].get(name));
+                convert::pi::fill(entry, Some(defaults), choices);
+            }
+        }
     }
     plan.push(Action::write(
         &shared_path,
@@ -342,20 +378,50 @@ pub fn mcp(
             Harness::Pi => {
                 let Some(converted) = &pi else { continue };
                 plan.warnings.extend(converted.warnings.iter().cloned());
-                // An empty override file is one more thing to keep in step for no
-                // reason, so it is only written when something genuinely cannot be shared.
-                if converted.overrides.is_empty() {
-                    continue;
+                for (relative, definitions, defaults) in [
+                    (paths::PI_MCP_ADAPTER, &converted.overrides, None),
+                    (
+                        paths::PI_MCP,
+                        &converted.native,
+                        Some(&converted.native_defaults),
+                    ),
+                ] {
+                    if definitions.is_empty() {
+                        continue;
+                    }
+                    let path = repo.join(relative);
+                    let mut document = plan.read_json(&path)?;
+                    merge::require_canonical_mcp(&document, &path)?;
+                    let mut definitions = definitions.clone();
+                    for (name, entry) in &mut definitions {
+                        if relative == paths::PI_MCP
+                            && inherited
+                                .as_ref()
+                                .is_some_and(|choices| choices.native_globals.contains(name))
+                            && document["mcpServers"][name].get("command").is_none()
+                            && document["mcpServers"][name].get("url").is_none()
+                        {
+                            return Err(Error::Catalogue(format!("{name}: a complete native project definition would replace a user-level server and its credentials. Keep the partial override, or explicitly configure that global server in Pi.")));
+                        }
+                        let fresh = entry.clone();
+                        let map = entry.as_object_mut().expect("converted server");
+                        plan.warnings.extend(convert::pi::carry(
+                            name,
+                            relative,
+                            &document["mcpServers"][name],
+                            &fresh,
+                            map,
+                        ));
+                        convert::pi::fill(map, defaults.and_then(|d| d.get(name)), None);
+                    }
+                    merge::mcp_servers(&mut document, &definitions);
+                    plan.push(Action::write(
+                        &path,
+                        merge::to_string(&document),
+                        format!("mcp   {relative} (Pi configuration)"),
+                    )?);
+                    add_helpers(plan, repo, catalogue, &document)?;
                 }
-                let path = repo.join(paths::PI_MCP);
-                let mut document = plan.read_json(&path)?;
-                merge::mcp_servers(&mut document, &converted.overrides);
-                plan.push(Action::write(
-                    &path,
-                    merge::to_string(&document),
-                    format!("mcp   {} (Pi-only overrides)", paths::PI_MCP),
-                )?);
-                add_helpers(plan, repo, catalogue, &document)?;
             }
         }
     }
@@ -611,6 +677,22 @@ pub fn with_dotenv(plan: &mut Plan, repo: &Path, catalogue: &Catalogue) -> Resul
     Ok(())
 }
 
+#[derive(Debug, Default)]
+pub struct Setup {
+    pub scaffold: bool,
+    pub pi_target: Option<convert::pi::Target>,
+    pub pi_context: Option<crate::mcp::Context>,
+}
+impl From<bool> for Setup {
+    fn from(scaffold: bool) -> Self {
+        Self {
+            scaffold,
+            pi_target: None,
+            pi_context: None,
+        }
+    }
+}
+
 /// Everything a repo needs, in one plan.
 ///
 /// One plan rather than three applied in turn, so the whole thing previews as a unit -
@@ -623,10 +705,15 @@ pub fn everything(
     hook_names: &[String],
     preset_names: &[String],
     skill_keys: &[String],
-    scaffold: bool,
+    setup: impl Into<Setup>,
 ) -> Result<Plan> {
-    let mut plan = Plan::default();
-    if scaffold {
+    let setup = setup.into();
+    let mut plan = Plan {
+        pi_target: setup.pi_target,
+        pi_context: setup.pi_context,
+        ..Plan::default()
+    };
+    if setup.scaffold {
         knowledge_files(&mut plan, repo, catalogue, harnesses)?;
     }
     hooks(&mut plan, repo, catalogue, hook_names, harnesses)?;

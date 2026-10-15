@@ -142,6 +142,9 @@ fn build(state: &AppState, id: i64, request: &Request) -> Result<(Plan, Repo)> {
             scaffold,
         } => {
             let harnesses = resolve(harnesses, &repo);
+            if !presets.is_empty() && harnesses.contains(&Harness::Pi) {
+                plan.pi_context = Some(state.mcp_for_project(&repo.path)?);
+            }
             if *scaffold {
                 install::knowledge_files(&mut plan, &repo.path, &catalogue, &harnesses)?;
             }
@@ -162,7 +165,17 @@ fn build(state: &AppState, id: i64, request: &Request) -> Result<(Plan, Repo)> {
                 &recommendation.hooks,
                 &recommendation.mcp,
                 &recommendation.skills,
-                *scaffold,
+                install::Setup {
+                    scaffold: *scaffold,
+                    pi_target: None,
+                    pi_context: if !recommendation.mcp.is_empty()
+                        && harnesses.contains(&Harness::Pi)
+                    {
+                        Some(state.mcp_for_project(&repo.path)?)
+                    } else {
+                        None
+                    },
+                },
             )?;
         }
         Request::Repair => {
