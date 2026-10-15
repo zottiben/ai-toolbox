@@ -130,7 +130,19 @@ fn save(context: &Context, saved: &Saved) -> Result<PathBuf> {
     )?;
     Ok(path)
 }
-fn lock(context: &Context) -> Result<std::fs::File> {
+struct ApplyLock {
+    file: std::fs::File,
+}
+impl Drop for ApplyLock {
+    fn drop(&mut self) {
+        // Closing alone retains flock until every inherited/duplicated descriptor is
+        // closed, so a surviving copy must not extend a completed operation's lock.
+        if let Err(error) = self.file.unlock() {
+            eprintln!("ai-toolbox: could not release MCP optimisation lock: {error}");
+        }
+    }
+}
+fn lock(context: &Context) -> Result<ApplyLock> {
     use std::os::unix::fs::OpenOptionsExt;
     let path = state_dir(context).join("apply.lock");
     no_links(&path)?;
@@ -142,10 +154,55 @@ fn lock(context: &Context) -> Result<std::fs::File> {
         .mode(0o600)
         .open(&path)
         .map_err(|e| Error::io(&path, e))?;
-    file.try_lock().map_err(|_| {
-        failure("Another MCP apply/rollback is in progress. Try again once it finishes.")
-    })?;
-    Ok(file)
+    file.try_lock().map_err(|error| lock_error(&path, error))?;
+    Ok(ApplyLock { file })
+}
+fn lock_error(path: &Path, error: std::fs::TryLockError) -> Error {
+    match error {
+        std::fs::TryLockError::WouldBlock => {
+            failure("Another MCP apply/rollback is in progress. Try again once it finishes.")
+        }
+        std::fs::TryLockError::Error(error) => Error::io(path, error),
+    }
+}
+#[cfg(test)]
+#[test]
+fn lock_io_errors_are_not_reported_as_another_writer() {
+    let error = lock_error(
+        Path::new("fixture.lock"),
+        std::fs::TryLockError::Error(std::io::Error::other("fixture I/O failure")),
+    );
+    assert!(error.to_string().contains("fixture I/O failure"));
+    assert!(!error.to_string().contains("in progress"));
+}
+#[cfg(test)]
+#[test]
+fn finishing_an_operation_releases_its_lock_even_if_a_child_inherits_the_descriptor() {
+    let home = tempfile::tempdir().unwrap();
+    let home = home.path().canonicalize().unwrap();
+    let context = Context {
+        agent_dir: home.join(".pi/agent"),
+        home,
+        backend: Backend::Native,
+        adapter_manifest: None,
+    };
+    std::fs::create_dir_all(state_dir(&context)).unwrap();
+    let held = lock(&context).unwrap();
+    let inherited = held.file.try_clone().unwrap();
+    assert!(
+        lock(&context).is_err(),
+        "a concurrent writer must still be refused"
+    );
+    drop(held);
+    let next = lock(&context)
+        .expect("a forked child's descriptor must not extend the completed operation's lock");
+    drop(inherited);
+    assert!(
+        lock(&context).is_err(),
+        "closing the inherited descriptor cannot release the next writer's lock"
+    );
+    drop(next);
+    assert!(lock(&context).is_ok());
 }
 fn read_saved(context: &Context, id: &str) -> Result<Saved> {
     let path = state_path(context, id)?;
