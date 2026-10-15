@@ -60,6 +60,14 @@ jobs:
       - name: Tests
         run: cargo test
 
+      # Sequential apply/rollback races only surfaced with other API requests spawning
+      # Git concurrently. Keep the deterministic descriptor test and exercise real sockets.
+      - name: Concurrent API lock lifetimes
+        run: |
+          for attempt in {1..20}; do
+            cargo test -q -p ai-toolbox-ui --test api || exit 1
+          done
+
       # The desktop app is out of default-members so the gates above stay quick. It
       # still has to compile, or a release tag would be the first thing to find out.
       - name: The desktop app compiles
