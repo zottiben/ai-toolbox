@@ -47,6 +47,9 @@ jobs:
         run: npm ci && npm run build
         working-directory: ui
 
+      - name: Cross-vendor review helper
+        run: node --test skills/cross-vendor-review/tests/*.test.mjs
+
       - name: Frontend types and tests
         run: npx tsc --noEmit && npm test
         working-directory: ui

@@ -355,6 +355,7 @@ Each becomes a `/slash-command` and is auto-selected by its `description`.
 | `handoff` | checkpoint before you clear/compact the context — commit + push + certify green + refresh a committed `HANDOFF.md` so a fresh session resumes exactly where you left off |
 | `agile-plan` | plan like a product and engineering team - outcome grounded in the code, one user story per PR with acceptance criteria and a demo, tasks with an owner, stacked only where a story needs an earlier one's code |
 | `pre-pr` | run the project's real checks + native review before you push |
+| [`cross-vendor-review`](skills/cross-vendor-review/SKILL.md) | explicitly requested second opinion: Claude authors use GPT-6 Luna; OpenAI authors use Haiku 5.5. Fixed models, fresh context, no tools, bounded input/time and visible usage; requires Node, Pi and Claude Code |
 | `audit` | self-audit the whole toolbox for drift |
 | `babysit-pr` | shepherd a PR to green, triaging each item |
 | `screen-record-demo` | record a short demo of a running web UI — drives the page over CDP with a synthetic cursor, captures the viewport (agent browsers are headless, so `screencapture` sees nothing), converts to mp4 without ffmpeg, verifies the file actually captured |

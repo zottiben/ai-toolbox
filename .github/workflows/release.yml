@@ -37,6 +37,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Cross-vendor review helper
+        run: node --test skills/cross-vendor-review/tests/*.test.mjs
       # Three files carry the version and they drift silently. A .dmg that says 0.1.0
       # inside a 0.2.0 release is the kind of thing nobody notices until they are
       # debugging the wrong build.
