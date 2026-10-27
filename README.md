@@ -355,7 +355,7 @@ Each becomes a `/slash-command` and is auto-selected by its `description`.
 | `handoff` | checkpoint before you clear/compact the context — commit + push + certify green + refresh a committed `HANDOFF.md` so a fresh session resumes exactly where you left off |
 | `agile-plan` | plan like a product and engineering team - outcome grounded in the code, one user story per PR with acceptance criteria and a demo, tasks with an owner, stacked only where a story needs an earlier one's code |
 | `pre-pr` | run the project's real checks + native review before you push |
-| [`cross-vendor-review`](skills/cross-vendor-review/SKILL.md) | explicitly requested second opinion: Claude authors use GPT-6 Luna; OpenAI authors use Haiku 5.5. Fixed models, fresh context, no tools, bounded input/time and visible usage; requires Node, Pi and Claude Code |
+| [`cross-vendor-review`](skills/cross-vendor-review/SKILL.md) | second opinion for reviews and pre-PR checks; choose a model or use low-cost opposing-vendor defaults. Fresh context, no tools, bounded input/time and visible usage |
 | `audit` | self-audit the whole toolbox for drift |
 | `babysit-pr` | shepherd a PR to green, triaging each item |
 | `screen-record-demo` | record a short demo of a running web UI — drives the page over CDP with a synthetic cursor, captures the viewport (agent browsers are headless, so `screencapture` sees nothing), converts to mp4 without ffmpeg, verifies the file actually captured |
@@ -374,6 +374,28 @@ awkward. Pi loads a project's `.agents/skills/` only after you trust the project
 at its first-run prompt. A group name like `cli` installs each child. Codex can add an optional `agents/openai.yaml` inside a skill
 folder for its own UI metadata; the toolbox skills don't need one, and any
 Claude-only frontmatter is simply ignored by Codex.
+
+### Review model and invocation preferences
+
+Ask "Review this with claude-sonnet-5-5", or pass `--model MODEL_ID` (`-m` for short)
+when invoking `cross-vendor-review`. For example, in Pi:
+`/skill:cross-vendor-review --model claude-sonnet-5-5`.
+The helper accepts the same flag. Set `CROSS_VENDOR_REVIEW_MODEL` in your harness
+environment for a persistent preference; a command-line choice takes precedence.
+Without either, Claude authors use GPT-6 Luna and OpenAI authors use Haiku 5.5.
+An explicit choice can use either supported vendor, including the author's own.
+Use exact model IDs; unavailable models fail without silently substituting another.
+
+Automatic selection is enabled for normal reviews. To keep it manual-only:
+
+- **Claude Code:** set `"skillOverrides": {"cross-vendor-review": "user-invocable-only"}`
+  in your [settings](https://code.claude.com/docs/en/skills#override-skill-visibility-from-settings).
+- **Pi:** set `disable-model-invocation: true` in the installed skill's `SKILL.md`
+  frontmatter. `/skill:cross-vendor-review` remains available.
+- **Codex:** set `policy.allow_implicit_invocation` to `false` in the installed
+  skill's `agents/openai.yaml`. Explicit `$cross-vendor-review` still works.
+
+These are user preferences, not restrictions imposed by the shared skill.
 
 ## Hooks
 

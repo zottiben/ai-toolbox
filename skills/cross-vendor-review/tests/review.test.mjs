@@ -11,18 +11,18 @@ const openai = selectReviewer("claude-opus-5-5");
 const anthropic = selectReviewer("gpt-6-astra");
 const usage = { input: 100, output: 20, cacheRead: 0, cacheWrite: 0, totalTokens: 120 };
 
-function runtimeFixture(result, inspect = () => {}) {
+function runtimeFixture(result, inspect = () => {}, reviewer = openai) {
   return async () => ({ ModelRuntime: { create: async (options) => {
     assert.equal(options.modelsPath, null);
     assert.equal(options.allowModelNetwork, false);
     return {
       getModel: (provider, model) => {
-        assert.equal(provider, openai.provider);
-        assert.equal(model, openai.model);
-        return openai;
+        assert.equal(provider, reviewer.provider);
+        assert.equal(model, reviewer.model);
+        return reviewer;
       },
       completeSimple: async (model, context, options) => {
-        assert.equal(model, openai);
+        assert.equal(model, reviewer);
         assert.equal(context.systemPrompt, SYSTEM);
         assert.equal(context.messages.length, 1);
         assert.equal(context.messages[0].content, packet);
@@ -49,6 +49,23 @@ it("routes the actual author model, including provider-qualified and Bedrock IDs
   for (const model of [undefined, "", "gemini-3", "opus", "my-router"]) assert.throws(() => selectReviewer(model), /Unknown author model/);
 });
 
+it("honours explicit reviewer models even for the same vendor or an unknown author", () => {
+  for (const author of [undefined, "gemini-3", "gpt-6-astra", "claude-opus-5-5"]) {
+    for (const model of ["gpt-6-sol", "openai/gpt-6-sol", "openai-codex/gpt-6-sol", "o3"]) {
+      assert.deepEqual(selectReviewer(author, model), { ...openai, model: model.split("/").at(-1) });
+    }
+    for (const model of ["claude-sonnet-5-5", "anthropic/claude-sonnet-5-5", "claude-code/claude-sonnet-5-5", "claude-subscription/claude-sonnet-5-5"]) {
+      assert.deepEqual(selectReviewer(author, model), { ...anthropic, model: "claude-sonnet-5-5" });
+    }
+  }
+});
+
+it("rejects ambiguous, unsupported or mismatched reviewer IDs instead of using a default", () => {
+  for (const model of ["", "sonnet", "opus", "gemini-3", "--help", "gpt-*", "openai-codex/claude-sonnet-5-5", "anthropic/gpt-6-sol", "unknown/gpt-6-sol", "extra/openai-codex/gpt-6-sol"]) {
+    assert.throws(() => selectReviewer("gpt-6-astra", model), /reviewer model/);
+  }
+});
+
 it("bounds the packet by UTF-8 bytes without silently truncating it", () => {
   assert.equal(validatePacket("a".repeat(LIMITS.inputBytes)), LIMITS.inputBytes);
   assert.throws(() => validatePacket(" "), /empty/);
@@ -67,9 +84,36 @@ it("calls OpenAI once with no tools or history and returns its usage", async () 
   assert.deepEqual(result.usage, usage);
 });
 
-it("does not substitute an unavailable OpenAI model", async () => {
-  const load = async () => ({ ModelRuntime: { create: async () => ({ getModel: () => undefined }) } });
-  await assert.rejects(reviewOpenAI(packet, openai, undefined, load), /No fallback/);
+it("passes a selected model to each backend and still verifies the returned model", async () => {
+  const selectedOpenAI = selectReviewer(undefined, "gpt-6-sol");
+  const openAIResponse = { ...openaiResult, model: selectedOpenAI.model };
+  const openAIReview = await reviewOpenAI(packet, selectedOpenAI, undefined, runtimeFixture(openAIResponse, () => {}, selectedOpenAI));
+  assert.equal(openAIReview.status, "complete");
+  assert.deepEqual(openAIReview.reviewer, selectedOpenAI);
+  const wrongOpenAI = await reviewOpenAI(packet, selectedOpenAI, undefined, runtimeFixture(openaiResult, () => {}, selectedOpenAI));
+  assert.equal(wrongOpenAI.status, "incomplete");
+
+  const selectedClaude = selectReviewer(undefined, "claude-sonnet-5-5");
+  const claudeResponse = { ...claudeResult, modelUsage: { [selectedClaude.model]: {} } };
+  const run = async (command, args, options) => {
+    if (!args.includes("auth")) assert.equal(args[args.indexOf("--model") + 1], selectedClaude.model);
+    return claudeFixture(claudeResponse)(command, args, options);
+  };
+  const claudeReview = await reviewAnthropic(packet, selectedClaude, undefined, run);
+  assert.equal(claudeReview.status, "complete");
+  assert.deepEqual(claudeReview.reviewer, selectedClaude);
+  const wrongClaude = await reviewAnthropic(packet, selectedClaude, undefined, claudeFixture(claudeResult));
+  assert.equal(wrongClaude.status, "incomplete");
+});
+
+it("does not substitute an unavailable default or selected OpenAI model", async () => {
+  for (const reviewer of [openai, selectReviewer(undefined, "gpt-unavailable")]) {
+    const load = async () => ({ ModelRuntime: { create: async () => ({ getModel: (_provider, model) => {
+      assert.equal(model, reviewer.model);
+      return undefined;
+    } }) } });
+    await assert.rejects(reviewOpenAI(packet, reviewer, undefined, load), new RegExp(`${reviewer.model}.*No fallback`));
+  }
 });
 
 for (const change of [
@@ -190,6 +234,58 @@ it("cancels the whole process group, not only the reviewer parent", async () => 
 
 describe("CLI", () => {
   const script = fileURLToPath(new URL("../scripts/review.mjs", import.meta.url));
+  it("accepts --model/-m, with CLI taking precedence over environment and automatic routing", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "review-model-test-"));
+    const input = join(directory, "packet.md");
+    const expected = { ...anthropic, model: "claude-sonnet-5-5" };
+    try {
+      await writeFile(input, packet);
+      for (const flag of ["--model", "-m"]) {
+        const result = await runProcess(process.execPath, [script, "--input", input, flag, expected.model, "--dry-run"], {
+          env: { PATH: "", PI_MODEL: "unknown", CROSS_VENDOR_REVIEW_MODEL: "invalid-model" },
+        });
+        assert.equal(result.code, 0, result.stdout);
+        assert.deepEqual(JSON.parse(result.stdout).reviewer, expected);
+      }
+      const configured = await runProcess(process.execPath, [script, "--input", input, "--dry-run"], {
+        env: { PATH: "", PI_MODEL: "unknown", CROSS_VENDOR_REVIEW_MODEL: expected.model },
+      });
+      assert.equal(configured.code, 0, configured.stdout);
+      assert.deepEqual(JSON.parse(configured.stdout).reviewer, expected);
+      for (const model of ["", "invalid-model"]) {
+        const invalid = await runProcess(process.execPath, [script, "--input", input, "--dry-run"], {
+          env: { PATH: "", PI_MODEL: "gpt-6-astra", CROSS_VENDOR_REVIEW_MODEL: model },
+        });
+        assert.equal(invalid.code, 1);
+        assert.match(invalid.stdout, /reviewer model/);
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("runs the explicitly selected backend through the real CLI", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "review-backend-test-"));
+    const input = join(directory, "packet.md");
+    const model = "claude-sonnet-5-5";
+    const response = { ...claudeResult, modelUsage: { [model]: {} } };
+    try {
+      await writeFile(input, packet);
+      await writeFile(join(directory, "claude"), `#!${process.execPath}\nconst assert = require('node:assert/strict');\nconst args = process.argv.slice(2);\nif (args.includes('auth')) console.log(${JSON.stringify(claudeAuth.stdout)});\nelse {\nassert.equal(args[args.indexOf('--model') + 1], ${JSON.stringify(model)});\nassert.equal(args[args.indexOf('--tools') + 1], '');\nprocess.stdin.resume();\nprocess.stdin.on('end', () => console.log(${JSON.stringify(JSON.stringify(response))}));\n}\n`, { mode: 0o755 });
+      const result = await runProcess(process.execPath, [script, "--input", input, "-m", model], {
+        env: { PATH: directory, PI_MODEL: "claude-opus-5-5", CROSS_VENDOR_REVIEW_MODEL: "gpt-6-sol" },
+        signal: AbortSignal.timeout(10000),
+      });
+      assert.equal(result.code, 0, result.stdout);
+      const review = JSON.parse(result.stdout);
+      assert.equal(review.status, "complete");
+      assert.equal(review.reviewer.model, model);
+      assert.deepEqual(review.usage, response.usage);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("runs when the installed skill path contains a symlink", async () => {
     const directory = await mkdtemp(join(tmpdir(), "review-symlink-test-"));
     try {
