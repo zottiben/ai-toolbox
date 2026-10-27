@@ -355,7 +355,7 @@ Each becomes a `/slash-command` and is auto-selected by its `description`.
 | `handoff` | checkpoint before you clear/compact the context — commit + push + certify green + refresh a committed `HANDOFF.md` so a fresh session resumes exactly where you left off |
 | `agile-plan` | plan like a product and engineering team - outcome grounded in the code, one user story per PR with acceptance criteria and a demo, tasks with an owner, stacked only where a story needs an earlier one's code |
 | `pre-pr` | run the project's real checks + native review before you push |
-| [`cross-vendor-review`](skills/cross-vendor-review/SKILL.md) | second opinion for reviews and pre-PR checks; choose a model or use low-cost opposing-vendor defaults. Fresh context, no tools, bounded input/time and visible usage |
+| [`cross-vendor-review`](skills/cross-vendor-review/SKILL.md) | opposing-vendor second opinion for reviews and pre-PR checks; choose a model pair or select strength from complexity, risk and confidence evidence. Fresh context, no tools, scaled reasoning/budgets and visible usage |
 | `audit` | self-audit the whole toolbox for drift |
 | `babysit-pr` | shepherd a PR to green, triaging each item |
 | `screen-record-demo` | record a short demo of a running web UI — drives the page over CDP with a synthetic cursor, captures the viewport (agent browsers are headless, so `screencapture` sees nothing), converts to mp4 without ffmpeg, verifies the file actually captured |
@@ -377,14 +377,43 @@ Claude-only frontmatter is simply ignored by Codex.
 
 ### Review model and invocation preferences
 
-Ask "Review this with claude-sonnet-5-5", or pass `--model MODEL_ID` (`-m` for short)
-when invoking `cross-vendor-review`. For example, in Pi:
-`/skill:cross-vendor-review --model claude-sonnet-5-5`.
-The helper accepts the same flag. Set `CROSS_VENDOR_REVIEW_MODEL` in your harness
-environment for a persistent preference; a command-line choice takes precedence.
-Without either, Claude authors use GPT-6 Luna and OpenAI authors use Haiku 5.5.
-An explicit choice can use either supported vendor, including the author's own.
-Use exact model IDs; unavailable models fail without silently substituting another.
+Ask for a pair such as `gpt-6-sol,claude-opus-5-5`, or in Pi run:
+`/skill:cross-vendor-review --model gpt-6-sol,claude-opus-5-5`.
+The helper accepts `--model` or `-m`. Pair order does not matter: a Claude author
+gets the OpenAI reviewer, and an OpenAI author gets the Claude reviewer.
+A single exact model ID is also accepted, but only from the opposing vendor.
+
+Preferences use this order:
+
+1. Task: `--model` / `-m`.
+2. Project: `--project-model` or `CROSS_VENDOR_REVIEW_PROJECT_MODEL` in the project
+   harness environment. The skill forwards a pair from project instructions using
+   `--project-model`; the helper does not parse instructions or load `.env` files.
+3. Global: `CROSS_VENDOR_REVIEW_MODEL` in the harness environment.
+4. Automatic: assess the implementation using the
+   [confidence and risk rubric](skills/cross-vendor-review/references/assessment.md).
+
+For example, set `CROSS_VENDOR_REVIEW_MODEL=gpt-6-sol,claude-opus-5-5` globally,
+then use a project preference or task flag where needed. The winning preference
+replaces lower-priority preferences; it does not merge them or bypass vendor routing.
+Unlike v0.4.0, the actual author model is required even with a preference. Unknown
+authors, same-vendor choices, duplicate vendors and unavailable models fail explicitly.
+
+Without a preference, Sol/Opus with high reasoning is the default for complex,
+risky or uncertain work. Luna/Haiku with medium reasoning is used only when low
+complexity, low risk and all four confidence checks are supported by evidence.
+The 0-4 score counts requirements, tests, coverage and familiarity evidence; it is
+not a probability of correctness. The caller supplies an assessment JSON file,
+and the helper validates it without making an extra classification model call.
+Missing assessment means strong review. The output includes the chosen model,
+preference source, score, evidence and selection rationale.
+
+Light review has a 64 KiB packet limit, 4,096-token output target and two-minute
+deadline. Strong review has 256 KiB, 16,384 tokens and ten minutes. Explicit stronger
+models receive the strong budget, not forced low effort. An explicit lightweight
+model on a strong assessment is flagged but not silently replaced. Codex does not
+enforce the output-token request; its deadline is the hard bound. Verify findings
+before making changes; uncertainty or a model's confidence is not itself a defect.
 
 Automatic selection is enabled for normal reviews. To keep it manual-only:
 

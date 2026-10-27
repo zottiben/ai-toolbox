@@ -20,7 +20,12 @@ fn cross_vendor_review_installs_its_helper_for_every_harness() {
         .unwrap();
         action::apply(&plan.actions).unwrap();
 
-        for file in ["SKILL.md", "scripts/review.mjs"] {
+        for file in [
+            "SKILL.md",
+            "scripts/review.mjs",
+            "scripts/selection.mjs",
+            "references/assessment.md",
+        ] {
             let installed = temp
                 .path()
                 .join(".agents/skills/cross-vendor-review")
